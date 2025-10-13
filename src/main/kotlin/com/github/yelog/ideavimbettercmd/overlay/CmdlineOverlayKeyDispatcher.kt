@@ -45,6 +45,10 @@ class CmdlineOverlayKeyDispatcher(
             return false
         }
 
+        if (IdeaVimFacade.isOverlaySuppressed()) {
+            return false
+        }
+
         val source = event.component
         if (source != null && manager.isOverlayComponent(source)) {
             return false
