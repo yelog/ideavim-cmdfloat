@@ -40,6 +40,7 @@ class CmdlineOverlayPanel(
     private var historyIndex = -1
     private var draftText: String = ""
     private var updatingFromHistory = false
+    private val basePreferredHeight: Int
 
     init {
         val scheme = EditorColorsManager.getInstance().globalScheme
@@ -78,8 +79,15 @@ class CmdlineOverlayPanel(
             isOpaque = false
             border = JBUI.Borders.empty(4)
             add(contentPanel, java.awt.BorderLayout.CENTER)
-            preferredSize = Dimension(JBUI.scale(400), JBUI.scale(124))
         }
+
+        val computedHeight = component.preferredSize.height
+        basePreferredHeight = if (computedHeight > 0) {
+            computedHeight
+        } else {
+            JBUI.scale(48)
+        }
+        component.preferredSize = Dimension(JBUI.scale(400), basePreferredHeight)
 
         installActions(focusComponent)
     }
@@ -90,7 +98,7 @@ class CmdlineOverlayPanel(
     }
 
     fun setPreferredWidth(width: Int) {
-        component.preferredSize = Dimension(width, JBUI.scale(124))
+        component.preferredSize = Dimension(width, basePreferredHeight)
     }
 
     private fun createTextField(scheme: EditorColorsScheme): JBTextField {
