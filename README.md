@@ -1,52 +1,44 @@
 # ideavim-better-cmd
 
 ![Build](https://github.com/yelog/ideavim-better-cmd/workflows/Build/badge.svg)
-[![Version](https://img.shields.io/jetbrains/plugin/v/MARKETPLACE_ID.svg)](https://plugins.jetbrains.com/plugin/MARKETPLACE_ID)
-[![Downloads](https://img.shields.io/jetbrains/plugin/d/MARKETPLACE_ID.svg)](https://plugins.jetbrains.com/plugin/MARKETPLACE_ID)
 
-## Template ToDo list
-- [x] Create a new [IntelliJ Platform Plugin Template][template] project.
-- [ ] Get familiar with the [template documentation][template].
-- [ ] Adjust the [pluginGroup](./gradle.properties) and [pluginName](./gradle.properties), as well as the [id](./src/main/resources/META-INF/plugin.xml) and [sources package](./src/main/kotlin).
-- [ ] Adjust the plugin description in `README` (see [Tips][docs:plugin-description])
-- [ ] Review the [Legal Agreements](https://plugins.jetbrains.com/docs/marketplace/legal-agreements.html?from=IJPluginTemplate).
-- [ ] [Publish a plugin manually](https://plugins.jetbrains.com/docs/intellij/publishing-plugin.html?from=IJPluginTemplate) for the first time.
-- [ ] Set the `MARKETPLACE_ID` in the above README badges. You can obtain it once the plugin is published to JetBrains Marketplace.
-- [ ] Set the [Plugin Signing](https://plugins.jetbrains.com/docs/intellij/plugin-signing.html?from=IJPluginTemplate) related [secrets](https://github.com/JetBrains/intellij-platform-plugin-template#environment-variables).
-- [ ] Set the [Deployment Token](https://plugins.jetbrains.com/docs/marketplace/plugin-upload.html?from=IJPluginTemplate).
-- [ ] Click the <kbd>Watch</kbd> button on the top of the [IntelliJ Platform Plugin Template][template] to be notified about releases containing new features and fixes.
-- [ ] Configure the [CODECOV_TOKEN](https://docs.codecov.com/docs/quick-start) secret for automated test coverage reports on PRs
+A modern command-line overlay for IdeaVim users that makes `:`, `/`, and `?` feel quicker and easier to use.
 
 <!-- Plugin description -->
-This Fancy IntelliJ Platform Plugin is going to be your implementation of the brilliant ideas that you have.
-
-This specific section is a source for the [plugin.xml](/src/main/resources/META-INF/plugin.xml) file which will be extracted by the [Gradle](/build.gradle.kts) during the build process.
-
-To keep everything working, do not remove `<!-- ... -->` sections. 
+`ideavim-better-cmd` provides an editor-themed command-line overlay for IdeaVim. When it detects triggers such as `:`, `/`, or `?`, it shows a visual panel with instant focus, provides quick history navigation, and replays the command back to IdeaVim. The overlay is automatically disabled when IdeaVim is unavailable or the IDE runs in LightEdit mode to avoid conflicts.
 <!-- Plugin description end -->
 
+## Key Features
+- Intercepts `:`, `/`, and `?` to display a command or search overlay near the caret instead of at the status bar.
+- Stores the most recent 20 commands or searches; use `Up`/`Down` to cycle through history and `Esc` to cancel.
+- Matches the current editor theme by sampling foreground, background, and border colors automatically.
+- Falls back to posting events through the IDE queue if IdeaVim APIs change, so command playback still works.
+- Skips initialization in headless, LightEdit, or non-Normal mode editors to reduce accidental triggers.
+
+## Usage
+- Make sure IdeaVim is installed and the editor is in Normal mode.
+- Press `:` for Ex commands or `/` and `?` for search; the overlay appears automatically.
+- Press `Enter` to submit. The command is replayed in IdeaVim; press `Esc` to close without executing.
+- Use `Up`/`Down` to traverse history. Typing new text resets the history cursor.
+
+## Requirements
+- JetBrains IDE 2024.3.6 or newer.
+- IdeaVim 2.10.0 or newer. The overlay disables itself if IdeaVim is missing.
+- Only active in standard project windows; LightEdit mode is ignored.
+
 ## Installation
+- **JetBrains Marketplace (coming soon)**: `Settings/Preferences` > `Plugins` > `Marketplace` > search for `ideavim-better-cmd` > Install.
+- **Manual install**: download the [latest release](https://github.com/yelog/ideavim-better-cmd/releases/latest), then go to `Settings/Preferences` > `Plugins` > `gear icon` > `Install Plugin from Disk...` and select the ZIP.
+- **Local build**: run `./gradlew buildPlugin` and install the generated ZIP from `build/distributions`.
 
-- Using the IDE built-in plugin system:
-  
-  <kbd>Settings/Preferences</kbd> > <kbd>Plugins</kbd> > <kbd>Marketplace</kbd> > <kbd>Search for "ideavim-better-cmd"</kbd> >
-  <kbd>Install</kbd>
-  
-- Using JetBrains Marketplace:
+## Build and Debug from Source
+- `./gradlew runIde`: launch a sandbox IDE for local debugging.
+- `./gradlew test`: execute the IntelliJ Platform integration tests.
+- On macOS, consider disabling the IDE "Press and Hold" behavior to mirror Vim key timing.
 
-  Go to [JetBrains Marketplace](https://plugins.jetbrains.com/plugin/MARKETPLACE_ID) and install it by clicking the <kbd>Install to ...</kbd> button in case your IDE is running.
-
-  You can also download the [latest release](https://plugins.jetbrains.com/plugin/MARKETPLACE_ID/versions) from JetBrains Marketplace and install it manually using
-  <kbd>Settings/Preferences</kbd> > <kbd>Plugins</kbd> > <kbd>⚙️</kbd> > <kbd>Install plugin from disk...</kbd>
-
-- Manually:
-
-  Download the [latest release](https://github.com/yelog/ideavim-better-cmd/releases/latest) and install it manually using
-  <kbd>Settings/Preferences</kbd> > <kbd>Plugins</kbd> > <kbd>⚙️</kbd> > <kbd>Install plugin from disk...</kbd>
-
+## FAQ
+- **The overlay does not appear.** Confirm the editor is in IdeaVim Normal mode and IdeaVim is updated to a supported version.
+- **The command did not execute.** The plugin falls back to the IDE event queue. If it still fails, search for `IdeaVim command overlay` in the IDE logs for diagnostics.
 
 ---
-Plugin based on the [IntelliJ Platform Plugin Template][template].
-
-[template]: https://github.com/JetBrains/intellij-platform-plugin-template
-[docs:plugin-description]: https://plugins.jetbrains.com/docs/intellij/plugin-user-experience.html#plugin-description-and-presentation
+Built on top of the [IntelliJ Platform Plugin Template](https://github.com/JetBrains/intellij-platform-plugin-template).
