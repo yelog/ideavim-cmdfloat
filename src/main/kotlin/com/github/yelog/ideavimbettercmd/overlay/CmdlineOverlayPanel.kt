@@ -21,7 +21,6 @@ import javax.swing.event.DocumentEvent
 import javax.swing.event.DocumentListener
 import javax.swing.border.TitledBorder
 import javax.swing.BorderFactory
-import javax.swing.SwingConstants
 
 class CmdlineOverlayPanel(
     private val mode: OverlayMode,
@@ -111,7 +110,7 @@ class CmdlineOverlayPanel(
             font = JBFont.regular().deriveFont(Font.PLAIN, JBUI.scale(14f))
             preferredSize = Dimension(JBUI.scale(200), inputHeight)
             minimumSize = Dimension(JBUI.scale(200), inputHeight)
-            margin = JBUI.insets(0, 3, 0, 6)
+            margin = JBUI.insets(0, 1, 0, 6)
             putClientProperty("JComponent.roundRect", java.lang.Boolean.TRUE)
             document.addDocumentListener(object : DocumentListener {
                 override fun insertUpdate(event: DocumentEvent) = resetHistoryIfNeeded()
@@ -131,7 +130,7 @@ class CmdlineOverlayPanel(
         val isSearchMode = mode == OverlayMode.SEARCH_FORWARD || mode == OverlayMode.SEARCH_BACKWARD
         val inputHeight = JBUI.scale(28)
         val label = JBLabel().apply {
-            border = JBUI.Borders.empty(0, 0, 0, 2)
+            border = JBUI.Borders.empty(0, 6, 0, 0)
             foreground = focusComponent.foreground
             font = JBFont.label().deriveFont(Font.BOLD, JBUI.scale(16f))
             preferredSize = Dimension(JBUI.scale(if (isSearchMode) 26 else 24), inputHeight)
@@ -141,7 +140,7 @@ class CmdlineOverlayPanel(
         if (isSearchMode) {
             label.icon = AllIcons.Actions.Search
         } else {
-            label.text = mode.prefix.toString()
+            label.text = ">"
         }
         return label
     }
