@@ -1,5 +1,6 @@
 package com.github.yelog.ideavimbettercmd.overlay
 
+import com.intellij.icons.AllIcons
 import com.intellij.openapi.editor.colors.EditorColorsManager
 import com.intellij.openapi.editor.colors.EditorColorsScheme
 import com.intellij.ui.JBColor
@@ -47,7 +48,7 @@ class CmdlineOverlayPanel(
 
         val inputPanel = JBPanel<JBPanel<*>>(java.awt.BorderLayout()).apply {
             isOpaque = false
-            border = JBUI.Borders.empty(6, 10, 10, 10)
+            border = JBUI.Borders.empty(6, 0, 0, 0)
             add(createPrefixLabel(), java.awt.BorderLayout.WEST)
             add(focusComponent, java.awt.BorderLayout.CENTER)
         }
@@ -68,7 +69,7 @@ class CmdlineOverlayPanel(
 
             border = JBUI.Borders.compound(
                 titleBorder,
-                JBUI.Borders.empty(18, 14, 14, 14)
+                JBUI.Borders.empty(6, 0, 0, 0)
             )
 
             add(inputPanel, java.awt.BorderLayout.CENTER)
@@ -78,7 +79,7 @@ class CmdlineOverlayPanel(
             isOpaque = false
             border = JBUI.Borders.empty(4)
             add(contentPanel, java.awt.BorderLayout.CENTER)
-            preferredSize = Dimension(JBUI.scale(400), JBUI.scale(136))
+            preferredSize = Dimension(JBUI.scale(400), JBUI.scale(124))
         }
 
         installActions(focusComponent)
@@ -90,18 +91,19 @@ class CmdlineOverlayPanel(
     }
 
     fun setPreferredWidth(width: Int) {
-        component.preferredSize = Dimension(width, JBUI.scale(136))
+        component.preferredSize = Dimension(width, JBUI.scale(124))
     }
 
     private fun createTextField(scheme: EditorColorsScheme): JBTextField {
+        val inputHeight = JBUI.scale(32)
         return JBTextField().apply {
-            border = JBUI.Borders.empty(6, 10, 6, 10)
+            border = JBUI.Borders.empty()
             background = scheme.toOverlayInputBackground()
             foreground = scheme.defaultForeground ?: JBColor.foreground()
             caretColor = foreground
             font = JBFont.regular().deriveFont(Font.PLAIN, JBUI.scale(14f))
-            preferredSize = Dimension(JBUI.scale(200), JBUI.scale(38))
-            minimumSize = Dimension(JBUI.scale(200), JBUI.scale(38))
+            preferredSize = Dimension(JBUI.scale(200), inputHeight)
+            minimumSize = Dimension(JBUI.scale(200), inputHeight)
             putClientProperty("JComponent.roundRect", java.lang.Boolean.TRUE)
             document.addDocumentListener(object : DocumentListener {
                 override fun insertUpdate(event: DocumentEvent) = resetHistoryIfNeeded()
@@ -118,12 +120,22 @@ class CmdlineOverlayPanel(
     }
 
     private fun createPrefixLabel(): JBLabel {
-        return JBLabel(mode.prefix.toString(), SwingConstants.CENTER).apply {
+        val isSearchMode = mode == OverlayMode.SEARCH_FORWARD || mode == OverlayMode.SEARCH_BACKWARD
+        val inputHeight = JBUI.scale(32)
+        val label = JBLabel().apply {
             border = JBUI.Borders.empty(0, 0, 0, 6)
             foreground = focusComponent.foreground
             font = JBFont.label().deriveFont(Font.BOLD, JBUI.scale(16f))
-            preferredSize = Dimension(JBUI.scale(28), JBUI.scale(38))
+            preferredSize = Dimension(JBUI.scale(if (isSearchMode) 32 else 28), inputHeight)
+            isOpaque = true
+            background = focusComponent.background
         }
+        if (isSearchMode) {
+            label.icon = AllIcons.Actions.Search
+        } else {
+            label.text = mode.prefix.toString()
+        }
+        return label
     }
 
     private fun installActions(textField: JBTextField) {
