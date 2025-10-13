@@ -14,12 +14,14 @@ import java.awt.Font
 import java.awt.event.ActionEvent
 import javax.swing.AbstractAction
 import javax.swing.ActionMap
-import javax.swing.InputMap
 import javax.swing.JComponent
+import javax.swing.InputMap
 import javax.swing.KeyStroke
-import javax.swing.SwingConstants
 import javax.swing.event.DocumentEvent
 import javax.swing.event.DocumentListener
+import javax.swing.border.TitledBorder
+import javax.swing.BorderFactory
+import javax.swing.SwingConstants
 
 class CmdlineOverlayPanel(
     private val mode: OverlayMode,
@@ -43,34 +45,32 @@ class CmdlineOverlayPanel(
         val scheme = EditorColorsManager.getInstance().globalScheme
         focusComponent = createTextField(scheme)
 
-        val prefixLabel = JBLabel(mode.prefix.toString()).apply {
-            font = font.deriveFont(Font.BOLD)
-            foreground = focusComponent.foreground
-            border = JBUI.Borders.emptyLeft(8)
-        }
-
         val inputPanel = JBPanel<JBPanel<*>>(java.awt.BorderLayout()).apply {
             isOpaque = false
-            border = JBUI.Borders.empty(12, 12, 16, 12)
-            add(prefixLabel, java.awt.BorderLayout.WEST)
+            border = JBUI.Borders.empty(6, 10, 10, 10)
+            add(createPrefixLabel(), java.awt.BorderLayout.WEST)
             add(focusComponent, java.awt.BorderLayout.CENTER)
-        }
-
-        val headerLabel = JBLabel(mode.header, SwingConstants.CENTER).apply {
-            font = JBFont.label().deriveFont(Font.BOLD)
-            foreground = focusComponent.foreground
-            border = JBUI.Borders.empty(8, 0, 4, 0)
-            isOpaque = false
         }
 
         val contentPanel = JBPanel<JBPanel<*>>(java.awt.BorderLayout()).apply {
             isOpaque = true
             background = scheme.toOverlayBackground()
-            border = JBUI.Borders.compound(
+            putClientProperty("JComponent.roundRect", java.lang.Boolean.TRUE)
+
+            val titleBorder = BorderFactory.createTitledBorder(
                 JBUI.Borders.customLine(scheme.toOverlayBorder(), 1),
-                JBUI.Borders.empty(12, 18, 18, 18)
+                mode.header,
+                TitledBorder.CENTER,
+                TitledBorder.TOP,
+                JBFont.label().deriveFont(Font.BOLD),
+                focusComponent.foreground
             )
-            add(headerLabel, java.awt.BorderLayout.NORTH)
+
+            border = JBUI.Borders.compound(
+                titleBorder,
+                JBUI.Borders.empty(18, 14, 14, 14)
+            )
+
             add(inputPanel, java.awt.BorderLayout.CENTER)
         }
 
@@ -78,7 +78,7 @@ class CmdlineOverlayPanel(
             isOpaque = false
             border = JBUI.Borders.empty(4)
             add(contentPanel, java.awt.BorderLayout.CENTER)
-            preferredSize = Dimension(JBUI.scale(400), JBUI.scale(112))
+            preferredSize = Dimension(JBUI.scale(400), JBUI.scale(136))
         }
 
         installActions(focusComponent)
@@ -90,16 +90,18 @@ class CmdlineOverlayPanel(
     }
 
     fun setPreferredWidth(width: Int) {
-        component.preferredSize = Dimension(width, JBUI.scale(112))
+        component.preferredSize = Dimension(width, JBUI.scale(136))
     }
 
     private fun createTextField(scheme: EditorColorsScheme): JBTextField {
         return JBTextField().apply {
-            border = JBUI.Borders.empty(0, 6, 0, 6)
+            border = JBUI.Borders.empty(6, 10, 6, 10)
             background = scheme.toOverlayInputBackground()
             foreground = scheme.defaultForeground ?: JBColor.foreground()
             caretColor = foreground
             font = JBFont.regular().deriveFont(Font.PLAIN, JBUI.scale(14f))
+            preferredSize = Dimension(JBUI.scale(200), JBUI.scale(38))
+            minimumSize = Dimension(JBUI.scale(200), JBUI.scale(38))
             putClientProperty("JComponent.roundRect", java.lang.Boolean.TRUE)
             document.addDocumentListener(object : DocumentListener {
                 override fun insertUpdate(event: DocumentEvent) = resetHistoryIfNeeded()
@@ -112,6 +114,15 @@ class CmdlineOverlayPanel(
                     }
                 }
             })
+        }
+    }
+
+    private fun createPrefixLabel(): JBLabel {
+        return JBLabel(mode.prefix.toString(), SwingConstants.CENTER).apply {
+            border = JBUI.Borders.empty(0, 0, 0, 6)
+            foreground = focusComponent.foreground
+            font = JBFont.label().deriveFont(Font.BOLD, JBUI.scale(16f))
+            preferredSize = Dimension(JBUI.scale(28), JBUI.scale(38))
         }
     }
 
