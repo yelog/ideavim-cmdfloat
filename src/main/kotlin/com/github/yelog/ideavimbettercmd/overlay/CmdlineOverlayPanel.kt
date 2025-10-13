@@ -9,7 +9,6 @@ import com.intellij.ui.components.JBPanel
 import com.intellij.ui.components.JBTextField
 import com.intellij.util.ui.JBFont
 import com.intellij.util.ui.JBUI
-import com.intellij.util.ui.UIUtil
 import java.awt.Dimension
 import java.awt.Font
 import java.awt.event.ActionEvent
@@ -55,7 +54,7 @@ class CmdlineOverlayPanel(
 
         val contentPanel = JBPanel<JBPanel<*>>(java.awt.BorderLayout()).apply {
             isOpaque = true
-            background = scheme.toOverlayBackground()
+            background = scheme.toOverlayInputBackground()
             putClientProperty("JComponent.roundRect", java.lang.Boolean.TRUE)
 
             val titleBorder = BorderFactory.createTitledBorder(
@@ -95,7 +94,7 @@ class CmdlineOverlayPanel(
     }
 
     private fun createTextField(scheme: EditorColorsScheme): JBTextField {
-        val inputHeight = JBUI.scale(32)
+        val inputHeight = JBUI.scale(28)
         return JBTextField().apply {
             border = JBUI.Borders.empty()
             background = scheme.toOverlayInputBackground()
@@ -104,6 +103,7 @@ class CmdlineOverlayPanel(
             font = JBFont.regular().deriveFont(Font.PLAIN, JBUI.scale(14f))
             preferredSize = Dimension(JBUI.scale(200), inputHeight)
             minimumSize = Dimension(JBUI.scale(200), inputHeight)
+            margin = JBUI.insets(0, 6, 0, 6)
             putClientProperty("JComponent.roundRect", java.lang.Boolean.TRUE)
             document.addDocumentListener(object : DocumentListener {
                 override fun insertUpdate(event: DocumentEvent) = resetHistoryIfNeeded()
@@ -121,12 +121,12 @@ class CmdlineOverlayPanel(
 
     private fun createPrefixLabel(): JBLabel {
         val isSearchMode = mode == OverlayMode.SEARCH_FORWARD || mode == OverlayMode.SEARCH_BACKWARD
-        val inputHeight = JBUI.scale(32)
+        val inputHeight = JBUI.scale(28)
         val label = JBLabel().apply {
-            border = JBUI.Borders.empty(0, 0, 0, 6)
+            border = JBUI.Borders.empty(0, 0, 0, 4)
             foreground = focusComponent.foreground
             font = JBFont.label().deriveFont(Font.BOLD, JBUI.scale(16f))
-            preferredSize = Dimension(JBUI.scale(if (isSearchMode) 32 else 28), inputHeight)
+            preferredSize = Dimension(JBUI.scale(if (isSearchMode) 26 else 24), inputHeight)
             isOpaque = true
             background = focusComponent.background
         }
@@ -203,15 +203,6 @@ class CmdlineOverlayPanel(
         textField.text = value
         textField.caretPosition = value.length
         updatingFromHistory = false
-    }
-
-    private fun EditorColorsScheme.toOverlayBackground(): JBColor {
-        val base = this.defaultBackground
-        if (base != null) {
-            val awt = java.awt.Color(base.red, base.green, base.blue, 235)
-            return JBColor(awt, awt)
-        }
-        return if (UIUtil.isUnderDarcula()) JBColor(0x2F3136, 0x2F3136) else JBColor(0xF6F7FB, 0xF6F7FB)
     }
 
     private fun EditorColorsScheme.toOverlayInputBackground(): JBColor {
