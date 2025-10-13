@@ -48,7 +48,7 @@ class CmdlineOverlayPanel(
 
         val inputPanel = JBPanel<JBPanel<*>>(java.awt.BorderLayout()).apply {
             isOpaque = false
-            border = JBUI.Borders.empty(6, 0, 0, 0)
+            border = JBUI.Borders.empty(2, 0, 2, 0)
             add(createPrefixLabel(), java.awt.BorderLayout.WEST)
             add(focusComponent, java.awt.BorderLayout.CENTER)
         }
@@ -69,7 +69,7 @@ class CmdlineOverlayPanel(
 
             border = JBUI.Borders.compound(
                 titleBorder,
-                JBUI.Borders.empty(6, 0, 0, 0)
+                JBUI.Borders.empty(2, 0, 2, 0)
             )
 
             add(inputPanel, java.awt.BorderLayout.CENTER)
@@ -111,7 +111,7 @@ class CmdlineOverlayPanel(
             font = JBFont.regular().deriveFont(Font.PLAIN, JBUI.scale(14f))
             preferredSize = Dimension(JBUI.scale(200), inputHeight)
             minimumSize = Dimension(JBUI.scale(200), inputHeight)
-            margin = JBUI.insets(0, 6, 0, 6)
+            margin = JBUI.insets(0, 3, 0, 6)
             putClientProperty("JComponent.roundRect", java.lang.Boolean.TRUE)
             document.addDocumentListener(object : DocumentListener {
                 override fun insertUpdate(event: DocumentEvent) = resetHistoryIfNeeded()
@@ -131,7 +131,7 @@ class CmdlineOverlayPanel(
         val isSearchMode = mode == OverlayMode.SEARCH_FORWARD || mode == OverlayMode.SEARCH_BACKWARD
         val inputHeight = JBUI.scale(28)
         val label = JBLabel().apply {
-            border = JBUI.Borders.empty(0, 0, 0, 4)
+            border = JBUI.Borders.empty(0, 0, 0, 2)
             foreground = focusComponent.foreground
             font = JBFont.label().deriveFont(Font.BOLD, JBUI.scale(16f))
             preferredSize = Dimension(JBUI.scale(if (isSearchMode) 26 else 24), inputHeight)
