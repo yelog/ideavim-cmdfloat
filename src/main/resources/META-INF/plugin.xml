@@ -5,11 +5,11 @@
     <vendor>yelog</vendor>
 
     <depends>com.intellij.modules.platform</depends>
+    <depends>IdeaVIM</depends>
 
     <resource-bundle>messages.MyBundle</resource-bundle>
 
     <extensions defaultExtensionNs="com.intellij">
-        <toolWindow factoryClass="com.github.yelog.ideavimbettercmd.toolWindow.MyToolWindowFactory" id="MyToolWindow"/>
-        <postStartupActivity implementation="com.github.yelog.ideavimbettercmd.startup.MyProjectActivity" />
+        <postStartupActivity implementation="com.github.yelog.ideavimbettercmd.startup.CmdlineOverlayStartupActivity" />
     </extensions>
 </idea-plugin>

@@ -6,7 +6,7 @@ import com.intellij.psi.xml.XmlFile
 import com.intellij.testFramework.TestDataPath
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import com.intellij.util.PsiErrorElementUtil
-import com.github.yelog.ideavimbettercmd.services.MyProjectService
+import com.github.yelog.ideavimbettercmd.services.CmdlineOverlayService
 
 @TestDataPath("\$CONTENT_ROOT/src/test/testData")
 class MyPluginTest : BasePlatformTestCase() {
@@ -30,9 +30,9 @@ class MyPluginTest : BasePlatformTestCase() {
     }
 
     fun testProjectService() {
-        val projectService = project.service<MyProjectService>()
+        val projectService = project.service<CmdlineOverlayService>()
 
-        assertNotSame(projectService.getRandomNumber(), projectService.getRandomNumber())
+        assertNotNull(projectService)
     }
 
     override fun getTestDataPath() = "src/test/testData/rename"

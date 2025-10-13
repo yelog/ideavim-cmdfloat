@@ -1,0 +1,159 @@
+package com.github.yelog.ideavimbettercmd.overlay
+
+import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.diagnostic.Logger
+import com.intellij.openapi.editor.Editor
+import com.intellij.openapi.editor.EditorKind
+import com.intellij.openapi.editor.ex.EditorEx
+import com.intellij.openapi.fileEditor.FileEditorManager
+import com.intellij.openapi.project.Project
+import com.intellij.openapi.ui.popup.JBPopup
+import com.intellij.openapi.ui.popup.JBPopupFactory
+import com.intellij.openapi.ui.popup.JBPopupListener
+import com.intellij.openapi.ui.popup.LightweightWindowEvent
+import com.intellij.openapi.wm.IdeFocusManager
+import com.intellij.ui.awt.RelativePoint
+import com.intellij.util.ui.JBUI
+import java.awt.Component
+import java.awt.Dimension
+import java.awt.Point
+import kotlin.math.max
+import kotlin.math.roundToInt
+
+class CmdlineOverlayManager(private val project: Project) {
+
+    private val logger = Logger.getInstance(CmdlineOverlayManager::class.java)
+    private val commandHistory = CommandHistory()
+    private val searchHistory = CommandHistory()
+
+    private var popup: JBPopup? = null
+    private var overlayComponent: CmdlineOverlayPanel? = null
+    private var activeMode: OverlayMode? = null
+    private var activeEditor: Editor? = null
+
+    fun handleTrigger(mode: OverlayMode): Boolean {
+        if (popup != null) {
+            logger.debug("Overlay already visible; ignore new trigger.")
+            return true
+        }
+
+        val editor = currentEditor() ?: return false
+        if (!IdeaVimFacade.isEditorInNormalMode(editor)) {
+            logger.debug("Editor not in IdeaVim normal mode; skip overlay display.")
+            return false
+        }
+
+        val history = when (mode.historyKey) {
+            HistoryKey.COMMAND -> commandHistory
+            HistoryKey.SEARCH -> searchHistory
+        }
+
+        showOverlay(editor, mode, history)
+        return true
+    }
+
+    fun isOverlayComponent(component: Component): Boolean {
+        val overlayRoot = overlayComponent?.component ?: return false
+        return component == overlayRoot || overlayRoot.isAncestorOf(component)
+    }
+
+    private fun showOverlay(editor: Editor, mode: OverlayMode, history: CommandHistory) {
+        val panel = CmdlineOverlayPanel(mode, history)
+        panel.onSubmit = { text ->
+            if (text.isNotEmpty()) {
+                history.add(text)
+            }
+            closePopup()
+            refocusEditor(editor)
+            ApplicationManager.getApplication().invokeLater {
+                IdeaVimFacade.replay(editor, mode, text)
+            }
+        }
+        panel.onCancel = {
+            closePopup()
+            refocusEditor(editor)
+        }
+
+        val editorComponent = (editor as? EditorEx)?.contentComponent ?: editor.contentComponent
+        val visibleArea = (editor as? EditorEx)?.scrollingModel?.visibleArea ?: editorComponent.visibleRect
+
+        val targetWidth = max((visibleArea.width * 0.5).roundToInt(), JBUI.scale(320))
+        panel.setPreferredWidth(targetWidth)
+
+        val popup = JBPopupFactory.getInstance()
+            .createComponentPopupBuilder(panel.component, panel.focusComponent)
+            .setResizable(false)
+            .setMovable(false)
+            .setRequestFocus(true)
+            .setFocusable(true)
+            .setCancelKeyEnabled(false)
+            .setCancelOnClickOutside(true)
+            .setCancelOnOtherWindowOpen(true)
+            .setCancelOnWindowDeactivation(true)
+            .addListener(object : JBPopupListener {
+                override fun onClosed(event: LightweightWindowEvent) {
+                    closePopup(requestCancel = false)
+                }
+            })
+            .createPopup()
+
+        val popupSize = panel.preferredSize
+        val x = visibleArea.x + ((visibleArea.width - popupSize.width) / 2)
+        val y = visibleArea.y + JBUI.scale(32)
+        val displayPoint = Point(max(x, visibleArea.x + JBUI.scale(16)), y)
+
+        this.popup = popup
+        this.overlayComponent = panel
+        this.activeMode = mode
+        this.activeEditor = editor
+
+        popup.show(RelativePoint(editorComponent, displayPoint))
+        panel.requestFocus()
+    }
+
+    private fun closePopup(requestCancel: Boolean = true) {
+        val currentPopup = popup
+        popup = null
+        overlayComponent = null
+        activeMode = null
+        activeEditor = null
+        if (requestCancel) {
+            currentPopup?.cancel()
+        }
+    }
+
+    private fun refocusEditor(editor: Editor) {
+        IdeFocusManager.getInstance(project).requestFocus(editor.contentComponent, true)
+    }
+
+    private fun Component.isAncestorOf(child: Component): Boolean {
+        var current: Component? = child
+        while (current != null) {
+            if (current == this) {
+                return true
+            }
+            current = current.parent
+        }
+        return false
+    }
+
+    private fun currentEditor(): Editor? {
+        val editor = FileEditorManager.getInstance(project).selectedTextEditor ?: return null
+        val editorEx = editor as? EditorEx ?: return null
+        if (editorEx.isDisposed || editorEx.isViewer || editorEx.editorKind != EditorKind.MAIN_EDITOR) {
+            return null
+        }
+        return editor
+    }
+}
+
+enum class OverlayMode(val header: String, val prefix: Char, val historyKey: HistoryKey) {
+    COMMAND("CmdLine", ':', HistoryKey.COMMAND),
+    SEARCH_FORWARD("Search", '/', HistoryKey.SEARCH),
+    SEARCH_BACKWARD("Search", '?', HistoryKey.SEARCH),
+}
+
+enum class HistoryKey {
+    COMMAND,
+    SEARCH,
+}
