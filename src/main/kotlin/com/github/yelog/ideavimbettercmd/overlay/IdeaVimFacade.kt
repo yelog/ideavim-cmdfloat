@@ -9,6 +9,7 @@ import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.editor.ScrollType
 import com.maddyhome.idea.vim.VimPlugin
 import com.maddyhome.idea.vim.options.Option
+import java.awt.Rectangle
 import java.awt.event.InputEvent
 import java.awt.event.KeyEvent
 import java.lang.reflect.Method
@@ -608,6 +609,17 @@ object IdeaVimFacade {
         }
     }
 
+    private fun restoreVisibleArea(editor: Editor, area: Rectangle) {
+        ApplicationManager.getApplication().invokeLater {
+            if (editor.isDisposed) {
+                return@invokeLater
+            }
+            val scrollingModel = editor.scrollingModel
+            scrollingModel.scrollHorizontally(area.x)
+            scrollingModel.scrollVertically(area.y)
+        }
+    }
+
     private fun moveCaret(editor: Editor, offset: Int) {
         ApplicationManager.getApplication().invokeLater {
             if (editor.isDisposed) {
@@ -656,7 +668,8 @@ object IdeaVimFacade {
             directionInt < 0 -> directionBackward
             else -> directionForward
         }
-        searchPreviewState.putIfAbsent(editor, SearchPreviewState(pattern, substitute, direction))
+        val visibleArea = Rectangle(editor.scrollingModel.visibleArea)
+        searchPreviewState.putIfAbsent(editor, SearchPreviewState(pattern, substitute, direction, visibleArea))
     }
 
     private fun restoreSearchState(editor: Editor) {
@@ -666,6 +679,7 @@ object IdeaVimFacade {
         val pattern = state.pattern ?: ""
         val substitute = state.substitute ?: ""
         searchSetLastStateMethod?.invoke(searchGroup, editor, pattern, substitute, direction)
+        state.visibleArea?.let { restoreVisibleArea(editor, it) }
     }
 
     private data class UpdateIncsearchMethod(
@@ -680,5 +694,6 @@ object IdeaVimFacade {
         val pattern: String?,
         val substitute: String?,
         val direction: Any?,
+        val visibleArea: Rectangle?,
     )
 }
