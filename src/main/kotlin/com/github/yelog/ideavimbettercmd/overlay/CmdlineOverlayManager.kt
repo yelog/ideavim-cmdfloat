@@ -103,6 +103,14 @@ class CmdlineOverlayManager(private val project: Project) {
                 IdeaVimFacade.cancelSearchPreview(editor, initialOffset)
             }
         }
+        if (mode == OverlayMode.COMMAND) {
+            panel.onCommandPatternPreview = { pattern, initialOffset ->
+                IdeaVimFacade.previewSearch(editor, OverlayMode.SEARCH_FORWARD, pattern, initialOffset)
+            }
+            panel.onCommandPatternCancel = { initialOffset ->
+                IdeaVimFacade.cancelSearchPreview(editor, initialOffset)
+            }
+        }
 
         val editorComponent = (editor as? EditorEx)?.contentComponent ?: editor.contentComponent
         val visibleArea = (editor as? EditorEx)?.scrollingModel?.visibleArea ?: editorComponent.visibleRect

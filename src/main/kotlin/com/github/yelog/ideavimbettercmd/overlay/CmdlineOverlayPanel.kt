@@ -53,6 +53,8 @@ class CmdlineOverlayPanel(
     var onCancel: (() -> Unit)? = null
     var onSearchPreview: ((String, Int) -> Unit)? = null
     var onSearchPreviewCancel: ((Int) -> Unit)? = null
+    var onCommandPatternPreview: ((String, Int) -> Unit)? = null
+    var onCommandPatternCancel: ((Int) -> Unit)? = null
 
     private val historySnapshot = history.snapshot()
     private var historyIndex = -1
@@ -64,6 +66,7 @@ class CmdlineOverlayPanel(
     private var searchCommitted = false
     private var searchCancelled = false
     private var searchInitialCaretOffset: Int = -1
+    private var commandPreviewActive = false
 
     init {
         val scheme = EditorColorsManager.getInstance().globalScheme
@@ -170,6 +173,9 @@ class CmdlineOverlayPanel(
         historyIndex = -1
         suggestionSupport?.onUserInput(textField.text)
         triggerSearchPreview(textField.text)
+        if (mode == OverlayMode.COMMAND) {
+            updateCommandPatternPreview(textField.text)
+        }
     }
 
     private fun createTextField(scheme: EditorColorsScheme): JBTextField {
@@ -227,6 +233,7 @@ class CmdlineOverlayPanel(
             override fun actionPerformed(e: ActionEvent) {
                 suggestionSupport?.dispose()
                 cancelSearchPreview()
+                cancelCommandPreview()
                 onCancel?.invoke()
             }
         })
@@ -284,6 +291,9 @@ class CmdlineOverlayPanel(
         setTextProgrammatically(textField, value)
         suggestionSupport?.dispose()
         triggerSearchPreview(value)
+        if (mode == OverlayMode.COMMAND) {
+            cancelCommandPreview()
+        }
     }
 
     private fun EditorColorsScheme.toOverlayInputBackground(): JBColor {
@@ -298,6 +308,7 @@ class CmdlineOverlayPanel(
         if (!searchCommitted && !searchCancelled) {
             cancelSearchPreview()
         }
+        cancelCommandPreview()
     }
 
     fun setSearchInitialCaretOffset(offset: Int) {
@@ -332,11 +343,101 @@ class CmdlineOverlayPanel(
         onSearchPreviewCancel?.invoke(searchInitialCaretOffset)
     }
 
-    private fun markSearchCommitted() {
-        if (!isSearchMode()) {
+    private fun cancelCommandPreview() {
+        if (!commandPreviewActive) {
             return
         }
-        searchCommitted = true
+        commandPreviewActive = false
+        onCommandPatternCancel?.invoke(searchInitialCaretOffset)
+    }
+
+    private fun updateCommandPatternPreview(content: String) {
+        val pattern = extractSubstitutionPattern(content)
+        if (pattern != null && pattern.isNotEmpty()) {
+            commandPreviewActive = true
+            onCommandPatternPreview?.invoke(pattern, searchInitialCaretOffset)
+        } else {
+            cancelCommandPreview()
+        }
+    }
+
+    private fun extractSubstitutionPattern(command: String): String? {
+        val trimmed = command.trimStart()
+        if (trimmed.isEmpty()) {
+            return null
+        }
+
+        var index = 0
+        fun skipRange(): Boolean {
+            if (index >= trimmed.length) return false
+            val ch = trimmed[index]
+            return when {
+                ch == '\'' && index + 1 < trimmed.length -> {
+                    index += 2
+                    true
+                }
+                ch.isWhitespace() || ch.isDigit() || ch == '%' || ch == '$' || ch == '.' || ch == ',' || ch == ';' || ch == '-' || ch == '+' -> {
+                    index += 1
+                    true
+                }
+                else -> false
+            }
+        }
+
+        while (skipRange()) {
+            // continue skipping range characters
+        }
+
+        if (index >= trimmed.length) {
+            return null
+        }
+
+        val remaining = trimmed.substring(index)
+        val commandLength = when {
+            remaining.startsWith("substitute", ignoreCase = true) -> "substitute".length
+            remaining.startsWith("s", ignoreCase = true) -> 1
+            else -> return null
+        }
+
+        index += commandLength
+        while (index < trimmed.length && trimmed[index].isWhitespace()) {
+            index += 1
+        }
+
+        if (index >= trimmed.length) {
+            return null
+        }
+
+        val delimiter = trimmed[index]
+        if (delimiter != '/') {
+            return null
+        }
+
+        val patternBuilder = StringBuilder()
+        var i = index + 1
+        var escaping = false
+        while (i < trimmed.length) {
+            val ch = trimmed[i]
+            if (!escaping && ch == delimiter) {
+                break
+            }
+            if (!escaping && ch == '\\') {
+                escaping = true
+            } else {
+                escaping = false
+            }
+            patternBuilder.append(ch)
+            i += 1
+        }
+
+        return patternBuilder.toString()
+    }
+
+    private fun markSearchCommitted() {
+        if (isSearchMode()) {
+            searchCommitted = true
+        }
+        cancelCommandPreview()
     }
 
     private fun isSearchMode(): Boolean {
