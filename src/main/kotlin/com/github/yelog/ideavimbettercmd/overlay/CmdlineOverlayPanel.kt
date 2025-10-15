@@ -640,6 +640,9 @@ class CmdlineOverlayPanel(
             if (!isActive()) {
                 return false
             }
+            if (model.isEmpty) {
+                return false
+            }
             val current = list.selectedIndex
             if (current == -1) {
                 val target = if (previous) model.size - 1 else 0
@@ -650,13 +653,25 @@ class CmdlineOverlayPanel(
                 list.ensureIndexIsVisible(target)
                 return true
             }
-            val target = current + if (previous) -1 else 1
-            if (target < 0 || target >= model.size) {
-                return false
+            if (previous) {
+                if (current == 0) {
+                    list.clearSelection()
+                    return true
+                }
+                val target = current - 1
+                list.selectedIndex = target
+                list.ensureIndexIsVisible(target)
+                return true
+            } else {
+                if (current == model.size - 1) {
+                    list.clearSelection()
+                    return true
+                }
+                val target = current + 1
+                list.selectedIndex = target
+                list.ensureIndexIsVisible(target)
+                return true
             }
-            list.selectedIndex = target
-            list.ensureIndexIsVisible(target)
-            return true
         }
 
         override fun acceptSelection(): Boolean {
@@ -833,6 +848,9 @@ class CmdlineOverlayPanel(
             if (!isActive()) {
                 return false
             }
+            if (model.isEmpty) {
+                return false
+            }
             val current = list.selectedIndex
             if (current == -1) {
                 val target = if (previous) model.size - 1 else 0
@@ -843,13 +861,25 @@ class CmdlineOverlayPanel(
                 list.ensureIndexIsVisible(target)
                 return true
             }
-            val target = current + if (previous) -1 else 1
-            if (target < 0 || target >= model.size) {
-                return false
+            if (previous) {
+                if (current == 0) {
+                    list.clearSelection()
+                    return true
+                }
+                val target = current - 1
+                list.selectedIndex = target
+                list.ensureIndexIsVisible(target)
+                return true
+            } else {
+                if (current == model.size - 1) {
+                    list.clearSelection()
+                    return true
+                }
+                val target = current + 1
+                list.selectedIndex = target
+                list.ensureIndexIsVisible(target)
+                return true
             }
-            list.selectedIndex = target
-            list.ensureIndexIsVisible(target)
-            return true
         }
 
         override fun acceptSelection(): Boolean {
