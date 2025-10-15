@@ -6,6 +6,7 @@ import com.intellij.openapi.actionSystem.DataContext
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.editor.Editor
+import com.intellij.openapi.editor.ScrollType
 import com.maddyhome.idea.vim.VimPlugin
 import com.maddyhome.idea.vim.options.Option
 import java.awt.event.InputEvent
@@ -613,7 +614,16 @@ object IdeaVimFacade {
                 return@invokeLater
             }
             val target = offset.coerceIn(0, editor.document.textLength)
+            val scrollingModel = editor.scrollingModel
+            val visibleArea = scrollingModel.visibleArea
+            val targetVisualPos = editor.offsetToVisualPosition(target)
+            val targetPoint = editor.visualPositionToXY(targetVisualPos)
+            val needsScroll = !visibleArea.contains(targetPoint)
             editor.caretModel.primaryCaret.moveToOffset(target)
+            if (needsScroll) {
+                val logicalPosition = editor.offsetToLogicalPosition(target)
+                scrollingModel.scrollTo(logicalPosition, ScrollType.CENTER)
+            }
         }
     }
 
