@@ -78,6 +78,7 @@ class CmdlineOverlayManager(private val project: Project) {
 
     private fun showOverlay(editor: Editor, mode: OverlayMode, history: CommandHistory) {
         val panel = CmdlineOverlayPanel(mode, history)
+        panel.setSearchInitialCaretOffset(editor.caretModel.primaryCaret.offset)
         panel.onSubmit = { text ->
             if (text.isNotEmpty()) {
                 history.add(text)
@@ -91,6 +92,16 @@ class CmdlineOverlayManager(private val project: Project) {
         panel.onCancel = {
             closePopup()
             refocusEditor(editor)
+        }
+        if (mode == OverlayMode.SEARCH_FORWARD || mode == OverlayMode.SEARCH_BACKWARD) {
+            IdeaVimFacade.resetSearchPreview()
+            panel.onSearchPreview = { text, initialOffset ->
+                IdeaVimFacade.previewSearch(editor, mode, text, initialOffset)
+            }
+            panel.onSearchPreviewCancel = {
+                IdeaVimFacade.resetSearchPreview()
+                IdeaVimFacade.restoreCaret(editor, panel.getSearchInitialCaretOffset())
+            }
         }
 
         val editorComponent = (editor as? EditorEx)?.contentComponent ?: editor.contentComponent
@@ -131,11 +142,13 @@ class CmdlineOverlayManager(private val project: Project) {
     }
 
     private fun closePopup(requestCancel: Boolean = true) {
+        val panel = overlayComponent
         val currentPopup = popup
         popup = null
         overlayComponent = null
         activeMode = null
         activeEditor = null
+        panel?.notifyClosed()
         if (requestCancel) {
             currentPopup?.cancel()
         }

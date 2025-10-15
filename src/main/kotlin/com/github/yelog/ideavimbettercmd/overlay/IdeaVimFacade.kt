@@ -3,6 +3,7 @@ package com.github.yelog.ideavimbettercmd.overlay
 import com.intellij.ide.DataManager
 import com.intellij.ide.IdeEventQueue
 import com.intellij.openapi.actionSystem.DataContext
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.editor.Editor
 import com.maddyhome.idea.vim.VimPlugin
@@ -28,6 +29,8 @@ object IdeaVimFacade {
     private val commandStateModeMethod = commandStateClass?.getMethod("getMode")
     private val vimPluginInstanceMethod = vimPluginClass?.getMethod("getInstance")
     private val vimPluginKeyMethod = vimPluginClass?.getMethod("getKey")
+    private val vimPluginSearchMethod = vimPluginClass?.getMethod("getSearch")
+    private val vimPluginEditorMethod = vimPluginClass?.getMethod("getEditor")
     private val handleKeyMethodCache = ConcurrentHashMap<Class<*>, List<Method>>()
     private val handleKeyFailureLogged = ConcurrentHashMap.newKeySet<String>()
     private val vimEditorClass = loadClass("com.maddyhome.idea.vim.api.VimEditor")
@@ -35,6 +38,37 @@ object IdeaVimFacade {
     private val vimEditorCreationCache = ConcurrentHashMap.newKeySet<Class<*>>()
     private val executionContextCreationCache = ConcurrentHashMap.newKeySet<Class<*>>()
     private val overlaySuppressionDeadline = AtomicLong(0)
+    private val searchGroupClass = loadClass("com.maddyhome.idea.vim.group.SearchGroup")
+    private val searchResetMethod = run {
+        val group = searchGroupClass ?: return@run null
+        runCatching { group.getMethod("resetIncsearchHighlights") }.getOrNull()
+    }
+    private val editorGroupClass = loadClass("com.maddyhome.idea.vim.group.EditorGroup")
+    private val closeEditorSearchSessionMethod = run {
+        val editorGroup = editorGroupClass ?: return@run null
+        runCatching { editorGroup.getMethod("closeEditorSearchSession", Editor::class.java) }.getOrNull()
+    }
+    private val searchHighlightsHelperClass = loadClass("com.maddyhome.idea.vim.helper.SearchHighlightsHelper")
+    private val lineRangeClass = loadClass("com.maddyhome.idea.vim.ex.ranges.LineRange")
+    private val updateIncsearchMethodInfo = run {
+        val helper = searchHighlightsHelperClass ?: return@run null
+        val method = helper.methods.firstOrNull { candidate ->
+            candidate.name == "updateIncsearchHighlights" && candidate.parameterTypes.size == 6
+        } ?: return@run null
+        val params = method.parameterTypes
+        val countIndices = params.withIndex().filter { it.value == Integer.TYPE }.map { it.index }
+        val booleanIndex = params.indexOfFirst { it == java.lang.Boolean.TYPE }
+        val rangeIndex = params.withIndex().firstOrNull { (index, type) ->
+            lineRangeClass?.let { clazz -> type == clazz || clazz.isAssignableFrom(type) } == true
+        }?.index ?: -1
+        if (countIndices.isEmpty() && booleanIndex == -1) {
+            null
+        } else {
+            val countIndex = if (countIndices.size >= 2) countIndices.first() else null
+            val caretIndex = countIndices.lastOrNull() ?: -1
+            UpdateIncsearchMethod(method, countIndex, booleanIndex, caretIndex, rangeIndex)
+        }
+    }
 
     data class OptionInfo(
         val name: String,
@@ -74,6 +108,67 @@ object IdeaVimFacade {
         } catch (throwable: Throwable) {
             logger.warn("Failed to collect IdeaVim option definitions.", throwable)
             emptyList()
+        }
+    }
+
+    fun previewSearch(editor: Editor, mode: OverlayMode, query: String, initialOffset: Int) {
+        if (!isAvailable()) {
+            return
+        }
+        val caretOffset = if (initialOffset >= 0) initialOffset else editor.caretModel.primaryCaret.offset
+        if (query.isEmpty()) {
+            resetSearchPreview()
+            restoreCaret(editor, caretOffset)
+            return
+        }
+
+        try {
+            closeEditorSearchSession(editor)
+            val incsearch = updateIncsearchMethodInfo ?: return
+            val forwards = mode != OverlayMode.SEARCH_BACKWARD
+            val args = arrayOfNulls<Any?>(incsearch.method.parameterTypes.size)
+            args[0] = editor
+            args[1] = query
+            val countIndex = incsearch.countIndex
+            if (countIndex != null && countIndex in args.indices) {
+                args[countIndex] = 1
+            }
+            if (incsearch.forwardsIndex in args.indices) {
+                args[incsearch.forwardsIndex] = forwards
+            }
+            if (incsearch.caretIndex in args.indices) {
+                args[incsearch.caretIndex] = caretOffset
+            }
+            if (incsearch.rangeIndex in args.indices && incsearch.rangeIndex >= 0) {
+                args[incsearch.rangeIndex] = null
+            }
+            val result = runCatching {
+                incsearch.method.invoke(null, *args)
+            }.getOrNull()
+            val matchOffset = when (result) {
+                is Int -> result
+                is java.lang.Integer -> result.toInt()
+                else -> -1
+            }
+            if (matchOffset != null && matchOffset >= 0) {
+                moveCaret(editor, matchOffset)
+            } else {
+                restoreCaret(editor, caretOffset)
+            }
+        } catch (throwable: Throwable) {
+            logger.debug("Failed to process incremental search for query '$query'", throwable)
+        }
+    }
+
+    fun resetSearchPreview() {
+        if (!isAvailable()) {
+            return
+        }
+        try {
+            val searchGroup = obtainSearchGroup() ?: return
+            searchResetMethod?.invoke(searchGroup)
+        } catch (throwable: Throwable) {
+            logger.debug("Failed to reset incremental search state", throwable)
         }
     }
 
@@ -436,4 +531,53 @@ object IdeaVimFacade {
     private fun kotlinObjectInstance(clazz: Class<*>): Any? {
         return runCatching { clazz.getField("INSTANCE").get(null) }.getOrNull()
     }
+
+    private fun obtainSearchGroup(): Any? {
+        return try {
+            vimPluginSearchMethod?.invoke(null)
+        } catch (throwable: Throwable) {
+            logger.debug("Failed to obtain IdeaVim search group", throwable)
+            null
+        }
+    }
+
+    private fun closeEditorSearchSession(editor: Editor) {
+        try {
+            val editorGroup = vimPluginEditorMethod?.invoke(null) ?: return
+            closeEditorSearchSessionMethod?.invoke(editorGroup, editor)
+        } catch (throwable: Throwable) {
+            logger.debug("Failed to close editor search session", throwable)
+        }
+    }
+
+    private fun moveCaret(editor: Editor, offset: Int) {
+        ApplicationManager.getApplication().invokeLater {
+            if (editor.isDisposed) {
+                return@invokeLater
+            }
+            val target = offset.coerceIn(0, editor.document.textLength)
+            editor.caretModel.primaryCaret.moveToOffset(target)
+        }
+    }
+
+    fun restoreCaret(editor: Editor, offset: Int) {
+        if (offset < 0) {
+            return
+        }
+        ApplicationManager.getApplication().invokeLater {
+            if (editor.isDisposed) {
+                return@invokeLater
+            }
+            val target = offset.coerceIn(0, editor.document.textLength)
+            editor.caretModel.primaryCaret.moveToOffset(target)
+        }
+    }
+
+    private data class UpdateIncsearchMethod(
+        val method: Method,
+        val countIndex: Int?,
+        val forwardsIndex: Int,
+        val caretIndex: Int,
+        val rangeIndex: Int,
+    )
 }

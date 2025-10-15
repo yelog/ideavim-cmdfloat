@@ -49,6 +49,8 @@ class CmdlineOverlayPanel(
 
     var onSubmit: ((String) -> Unit)? = null
     var onCancel: (() -> Unit)? = null
+    var onSearchPreview: ((String, Int) -> Unit)? = null
+    var onSearchPreviewCancel: (() -> Unit)? = null
 
     private val historySnapshot = history.snapshot()
     private var historyIndex = -1
@@ -57,6 +59,9 @@ class CmdlineOverlayPanel(
     private var suggestionSupport: CommandSuggestionSupport? = null
     private var preferredWidth = JBUI.scale(400)
     private val basePreferredHeight: Int
+    private var searchCommitted = false
+    private var searchCancelled = false
+    private var searchInitialCaretOffset: Int = -1
 
     init {
         val scheme = EditorColorsManager.getInstance().globalScheme
@@ -138,6 +143,7 @@ class CmdlineOverlayPanel(
         }
         historyIndex = -1
         suggestionSupport?.onUserInput(textField.text)
+        triggerSearchPreview(textField.text)
     }
 
     private fun createTextField(scheme: EditorColorsScheme): JBTextField {
@@ -183,6 +189,7 @@ class CmdlineOverlayPanel(
         textField.addActionListener {
             suggestionSupport?.acceptSelection()
             onSubmit?.invoke(textField.text)
+            markSearchCommitted()
             suggestionSupport?.dispose()
         }
 
@@ -193,6 +200,7 @@ class CmdlineOverlayPanel(
         actionMap.put(ACTION_CANCEL, object : AbstractAction() {
             override fun actionPerformed(e: ActionEvent) {
                 suggestionSupport?.dispose()
+                cancelSearchPreview()
                 onCancel?.invoke()
             }
         })
@@ -249,6 +257,7 @@ class CmdlineOverlayPanel(
     private fun applyHistoryValue(value: String, textField: JBTextField) {
         setTextProgrammatically(textField, value)
         suggestionSupport?.dispose()
+        triggerSearchPreview(value)
     }
 
     private fun EditorColorsScheme.toOverlayInputBackground(): JBColor {
@@ -257,6 +266,49 @@ class CmdlineOverlayPanel(
 
     private fun EditorColorsScheme.toOverlayBorder(): JBColor {
         return JBColor.namedColor("Component.borderColor", JBColor(0xC9CDD8, 0x4C5057))
+    }
+
+    fun notifyClosed() {
+        if (!searchCommitted && !searchCancelled) {
+            cancelSearchPreview()
+        }
+    }
+
+    fun setSearchInitialCaretOffset(offset: Int) {
+        searchInitialCaretOffset = offset
+    }
+
+    fun getSearchInitialCaretOffset(): Int = searchInitialCaretOffset
+
+    private fun triggerSearchPreview(text: String) {
+        if (!isSearchMode()) {
+            return
+        }
+        searchCommitted = false
+        searchCancelled = false
+        onSearchPreview?.invoke(text, searchInitialCaretOffset)
+    }
+
+    private fun cancelSearchPreview() {
+        if (!isSearchMode()) {
+            return
+        }
+        if (searchCancelled) {
+            return
+        }
+        searchCancelled = true
+        onSearchPreviewCancel?.invoke()
+    }
+
+    private fun markSearchCommitted() {
+        if (!isSearchMode()) {
+            return
+        }
+        searchCommitted = true
+    }
+
+    private fun isSearchMode(): Boolean {
+        return mode == OverlayMode.SEARCH_FORWARD || mode == OverlayMode.SEARCH_BACKWARD
     }
 
     private inner class CommandSuggestionSupport(
