@@ -3,24 +3,38 @@ package com.github.yelog.ideavimbettercmd.overlay
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.editor.colors.EditorColorsManager
 import com.intellij.openapi.editor.colors.EditorColorsScheme
+import com.intellij.openapi.ui.popup.JBPopup
+import com.intellij.openapi.ui.popup.JBPopupFactory
+import com.intellij.ui.CollectionListModel
+import com.intellij.ui.ColoredListCellRenderer
 import com.intellij.ui.JBColor
+import com.intellij.ui.SimpleTextAttributes
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBPanel
+import com.intellij.ui.components.JBScrollPane
+import com.intellij.ui.components.JBList
 import com.intellij.ui.components.JBTextField
+import com.intellij.ui.awt.RelativePoint
 import com.intellij.util.ui.JBFont
 import com.intellij.util.ui.JBUI
 import java.awt.Dimension
 import java.awt.Font
+import java.awt.Point
 import java.awt.event.ActionEvent
+import java.awt.event.HierarchyEvent
+import java.awt.event.HierarchyListener
 import javax.swing.AbstractAction
 import javax.swing.ActionMap
 import javax.swing.JComponent
+import javax.swing.JList
+import javax.swing.ListSelectionModel
 import javax.swing.InputMap
 import javax.swing.KeyStroke
 import javax.swing.event.DocumentEvent
 import javax.swing.event.DocumentListener
 import javax.swing.border.TitledBorder
 import javax.swing.BorderFactory
+import kotlin.math.min
 
 class CmdlineOverlayPanel(
     private val mode: OverlayMode,
@@ -38,12 +52,17 @@ class CmdlineOverlayPanel(
     private val historySnapshot = history.snapshot()
     private var historyIndex = -1
     private var draftText: String = ""
-    private var updatingFromHistory = false
+    private var programmaticUpdate = false
+    private var suggestionSupport: CommandSuggestionSupport? = null
+    private var preferredWidth = JBUI.scale(400)
     private val basePreferredHeight: Int
 
     init {
         val scheme = EditorColorsManager.getInstance().globalScheme
         focusComponent = createTextField(scheme)
+        if (mode == OverlayMode.COMMAND) {
+            suggestionSupport = CommandSuggestionSupport(focusComponent, scheme)
+        }
 
         val inputPanel = JBPanel<JBPanel<*>>(java.awt.BorderLayout()).apply {
             isOpaque = false
@@ -72,6 +91,7 @@ class CmdlineOverlayPanel(
             )
 
             add(inputPanel, java.awt.BorderLayout.CENTER)
+            suggestionSupport?.install(this)
         }
 
         component = JBPanel<JBPanel<*>>(java.awt.BorderLayout()).apply {
@@ -86,7 +106,8 @@ class CmdlineOverlayPanel(
         } else {
             JBUI.scale(48)
         }
-        component.preferredSize = Dimension(JBUI.scale(400), basePreferredHeight)
+        preferredWidth = JBUI.scale(400)
+        applyPreferredSize()
 
         installActions(focusComponent)
     }
@@ -97,7 +118,25 @@ class CmdlineOverlayPanel(
     }
 
     fun setPreferredWidth(width: Int) {
-        component.preferredSize = Dimension(width, basePreferredHeight)
+        preferredWidth = width
+        applyPreferredSize()
+        suggestionSupport?.updatePopupWidth(width)
+    }
+
+    private fun applyPreferredSize() {
+        component.preferredSize = Dimension(preferredWidth, basePreferredHeight)
+        component.revalidate()
+        component.repaint()
+        component.parent?.revalidate()
+        component.parent?.repaint()
+    }
+
+    private fun handleDocumentChange(textField: JBTextField) {
+        if (programmaticUpdate) {
+            return
+        }
+        historyIndex = -1
+        suggestionSupport?.onUserInput(textField.text)
     }
 
     private fun createTextField(scheme: EditorColorsScheme): JBTextField {
@@ -113,15 +152,9 @@ class CmdlineOverlayPanel(
             margin = JBUI.insets(0, 1, 0, 6)
             putClientProperty("JComponent.roundRect", java.lang.Boolean.TRUE)
             document.addDocumentListener(object : DocumentListener {
-                override fun insertUpdate(event: DocumentEvent) = resetHistoryIfNeeded()
-                override fun removeUpdate(event: DocumentEvent) = resetHistoryIfNeeded()
-                override fun changedUpdate(event: DocumentEvent) = resetHistoryIfNeeded()
-
-                private fun resetHistoryIfNeeded() {
-                    if (!updatingFromHistory) {
-                        historyIndex = -1
-                    }
-                }
+                override fun insertUpdate(event: DocumentEvent) = handleDocumentChange(this@apply)
+                override fun removeUpdate(event: DocumentEvent) = handleDocumentChange(this@apply)
+                override fun changedUpdate(event: DocumentEvent) = handleDocumentChange(this@apply)
             })
         }
     }
@@ -147,7 +180,9 @@ class CmdlineOverlayPanel(
 
     private fun installActions(textField: JBTextField) {
         textField.addActionListener {
+            suggestionSupport?.acceptSelection()
             onSubmit?.invoke(textField.text)
+            suggestionSupport?.dispose()
         }
 
         val inputMap: InputMap = textField.getInputMap(JComponent.WHEN_FOCUSED)
@@ -156,6 +191,7 @@ class CmdlineOverlayPanel(
         inputMap.put(KeyStroke.getKeyStroke("ESCAPE"), ACTION_CANCEL)
         actionMap.put(ACTION_CANCEL, object : AbstractAction() {
             override fun actionPerformed(e: ActionEvent) {
+                suggestionSupport?.dispose()
                 onCancel?.invoke()
             }
         })
@@ -163,14 +199,18 @@ class CmdlineOverlayPanel(
         inputMap.put(KeyStroke.getKeyStroke("UP"), ACTION_HISTORY_PREVIOUS)
         actionMap.put(ACTION_HISTORY_PREVIOUS, object : AbstractAction() {
             override fun actionPerformed(e: ActionEvent?) {
-                navigateHistory(previous = true, textField)
+                if (suggestionSupport?.moveSelection(previous = true) != true) {
+                    navigateHistory(previous = true, textField)
+                }
             }
         })
 
         inputMap.put(KeyStroke.getKeyStroke("DOWN"), ACTION_HISTORY_NEXT)
         actionMap.put(ACTION_HISTORY_NEXT, object : AbstractAction() {
             override fun actionPerformed(e: ActionEvent?) {
-                navigateHistory(previous = false, textField)
+                if (suggestionSupport?.moveSelection(previous = false) != true) {
+                    navigateHistory(previous = false, textField)
+                }
             }
         })
     }
@@ -206,10 +246,8 @@ class CmdlineOverlayPanel(
     }
 
     private fun applyHistoryValue(value: String, textField: JBTextField) {
-        updatingFromHistory = true
-        textField.text = value
-        textField.caretPosition = value.length
-        updatingFromHistory = false
+        setTextProgrammatically(textField, value)
+        suggestionSupport?.clear()
     }
 
     private fun EditorColorsScheme.toOverlayInputBackground(): JBColor {
@@ -220,9 +258,196 @@ class CmdlineOverlayPanel(
         return JBColor.namedColor("Component.borderColor", JBColor(0xC9CDD8, 0x4C5057))
     }
 
+    private inner class CommandSuggestionSupport(
+        private val textField: JBTextField,
+        private val scheme: EditorColorsScheme,
+    ) {
+        private val model = CollectionListModel<ExCommandCompletion.Suggestion>()
+        private val list = JBList(model).apply {
+            selectionMode = ListSelectionModel.SINGLE_SELECTION
+            fixedCellHeight = JBUI.scale(20)
+            border = JBUI.Borders.empty(0, 6, 0, 6)
+            background = textField.background
+            foreground = textField.foreground
+            putClientProperty("JComponent.roundRect", java.lang.Boolean.TRUE)
+            cellRenderer = object : ColoredListCellRenderer<ExCommandCompletion.Suggestion>() {
+                override fun customizeCellRenderer(
+                    list: JList<out ExCommandCompletion.Suggestion>,
+                    value: ExCommandCompletion.Suggestion?,
+                    index: Int,
+                    selected: Boolean,
+                    hasFocus: Boolean,
+                ) {
+                    if (value == null) {
+                        return
+                    }
+                    append(value.displayText, SimpleTextAttributes.REGULAR_ATTRIBUTES)
+                }
+            }
+        }
+
+        private val scrollPane = JBScrollPane(list).apply {
+            isOpaque = false
+            border = JBUI.Borders.empty(2, 0, 4, 0)
+            viewport.isOpaque = false
+            horizontalScrollBarPolicy = JBScrollPane.HORIZONTAL_SCROLLBAR_NEVER
+            verticalScrollBar.unitIncrement = JBUI.scale(12)
+            background = scheme.toOverlayInputBackground()
+        }
+
+        private val maxVisibleRows = 8
+        private var popup: JBPopup? = null
+        private var parentComponent: JComponent? = null
+        private var currentHeight: Int = JBUI.scale(80)
+
+        init {
+            textField.addHierarchyListener(object : HierarchyListener {
+                override fun hierarchyChanged(event: HierarchyEvent) {
+                    if (event.changeFlags and HierarchyEvent.DISPLAYABILITY_CHANGED.toLong() != 0L &&
+                        !textField.isDisplayable
+                    ) {
+                        dispose()
+                    }
+                }
+            })
+        }
+
+        fun install(parent: JComponent) {
+            parentComponent = parent
+        }
+
+        fun onUserInput(content: String) {
+            val suggestions = ExCommandCompletion.suggest(content, maxVisibleRows)
+            updateSuggestions(suggestions)
+        }
+
+        fun moveSelection(previous: Boolean): Boolean {
+            if (!isActive()) {
+                return false
+            }
+            val current = list.selectedIndex
+            if (current == -1) {
+                val target = if (previous) model.size - 1 else 0
+                list.selectedIndex = target
+                list.ensureIndexIsVisible(target)
+                return true
+            }
+            val target = current + if (previous) -1 else 1
+            if (target < 0 || target >= model.size) {
+                return false
+            }
+            list.selectedIndex = target
+            list.ensureIndexIsVisible(target)
+            return true
+        }
+
+        fun acceptSelection(): Boolean {
+            if (!isActive()) {
+                return false
+            }
+            val index = if (list.selectedIndex >= 0) list.selectedIndex else 0
+            if (index < 0 || index >= model.size) {
+                clear()
+                return false
+            }
+            val suggestion = model.getElementAt(index)
+            setTextProgrammatically(textField, suggestion.executionText)
+            clear()
+            return true
+        }
+
+        fun clear() = dispose()
+
+        private fun updateSuggestions(suggestions: List<ExCommandCompletion.Suggestion>) {
+            if (suggestions.isEmpty()) {
+                dispose()
+                return
+            }
+
+            model.replaceAll(suggestions)
+            if (list.selectedIndex == -1 || list.selectedIndex >= model.size) {
+                list.selectedIndex = 0
+            }
+            val visibleRows = min(model.size, maxVisibleRows)
+            val rowHeight = list.fixedCellHeight.takeIf { it > 0 } ?: list.preferredSize.height.coerceAtLeast(JBUI.scale(20))
+            val parent = parentComponent ?: return dispose()
+
+            val parentWidth = parent.width.takeIf { it > 0 } ?: parent.preferredSize.width
+            val width = parentWidth.coerceAtLeast(JBUI.scale(200))
+            val height = visibleRows * rowHeight + JBUI.scale(4)
+            currentHeight = height
+            val size = Dimension(width, height)
+            scrollPane.preferredSize = size
+            scrollPane.minimumSize = size
+            scrollPane.maximumSize = size
+
+            val popup = ensurePopup()
+            popup.setSize(size)
+            popup.setLocation(
+                RelativePoint(parent, Point(0, parent.height)).screenPoint
+            )
+            list.ensureIndexIsVisible(list.selectedIndex)
+            scrollPane.revalidate()
+            scrollPane.repaint()
+        }
+
+        private fun isActive(): Boolean = popup?.let { !it.isDisposed && model.size > 0 } == true
+
+        private fun ensurePopup(): JBPopup {
+            var current = popup
+            if (current == null || current.isDisposed) {
+                current = JBPopupFactory.getInstance()
+                    .createComponentPopupBuilder(scrollPane, list)
+                    .setFocusable(false)
+                    .setRequestFocus(false)
+                    .setCancelKeyEnabled(false)
+                    .setCancelOnClickOutside(false)
+                    .setCancelOnOtherWindowOpen(true)
+                    .setCancelOnWindowDeactivation(true)
+                    .setMovable(false)
+                    .setResizable(false)
+                    .createPopup()
+                popup = current
+                parentComponent?.let {
+                    current.show(RelativePoint(it, Point(0, it.height)))
+                }
+            }
+            return current
+        }
+
+        fun updatePopupWidth(width: Int) {
+            val popup = popup ?: return
+            if (popup.isDisposed) {
+                return
+            }
+            val size = Dimension(width, currentHeight)
+            popup.setSize(size)
+            scrollPane.preferredSize = size
+            scrollPane.minimumSize = size
+            scrollPane.maximumSize = size
+            parentComponent?.let {
+                popup.setLocation(RelativePoint(it, Point(0, it.height)).screenPoint)
+            }
+        }
+
+        fun dispose() {
+            popup?.cancel()
+            popup = null
+            model.replaceAll(emptyList())
+            list.clearSelection()
+        }
+    }
+
     companion object {
         private const val ACTION_CANCEL = "ideavim.cmdline.cancel"
         private const val ACTION_HISTORY_PREVIOUS = "ideavim.cmdline.history.previous"
         private const val ACTION_HISTORY_NEXT = "ideavim.cmdline.history.next"
+    }
+
+    private fun setTextProgrammatically(textField: JBTextField, value: String) {
+        programmaticUpdate = true
+        textField.text = value
+        textField.caretPosition = value.length
+        programmaticUpdate = false
     }
 }
