@@ -39,6 +39,9 @@ object IdeaVimFacade {
     private val executionContextCreationCache = ConcurrentHashMap.newKeySet<Class<*>>()
     private val overlaySuppressionDeadline = AtomicLong(0)
     private val searchGroupClass = loadClass("com.maddyhome.idea.vim.group.SearchGroup")
+    private val directionClass = loadClass("com.maddyhome.idea.vim.common.Direction")
+    private val directionForward = runCatching { directionClass?.getField("FORWARDS")?.get(null) }.getOrNull()
+    private val directionBackward = runCatching { directionClass?.getField("BACKWARDS")?.get(null) }.getOrNull()
     private val searchResetMethod = run {
         val group = searchGroupClass ?: return@run null
         runCatching { group.getMethod("resetIncsearchHighlights") }.getOrNull()
@@ -47,6 +50,29 @@ object IdeaVimFacade {
     private val closeEditorSearchSessionMethod = run {
         val editorGroup = editorGroupClass ?: return@run null
         runCatching { editorGroup.getMethod("closeEditorSearchSession", Editor::class.java) }.getOrNull()
+    }
+    private val searchSetLastStateMethod = run {
+        val group = searchGroupClass
+        val direction = directionClass
+        if (group != null && direction != null) {
+            runCatching {
+                group.getMethod("setLastSearchState", Editor::class.java, String::class.java, String::class.java, direction)
+            }.getOrNull()
+        } else {
+            null
+        }
+    }
+    private val searchGetLastPatternMethod = run {
+        val group = searchGroupClass ?: return@run null
+        runCatching { group.getMethod("getLastSearchPattern") }.getOrNull()
+    }
+    private val searchGetLastSubstituteMethod = run {
+        val group = searchGroupClass ?: return@run null
+        runCatching { group.getMethod("getLastSubstitutePattern") }.getOrNull()
+    }
+    private val searchGetLastDirMethod = run {
+        val group = searchGroupClass ?: return@run null
+        runCatching { group.getMethod("getLastDir") }.getOrNull()
     }
     private val searchHighlightsHelperClass = loadClass("com.maddyhome.idea.vim.helper.SearchHighlightsHelper")
     private val lineRangeClass = loadClass("com.maddyhome.idea.vim.ex.ranges.LineRange")
@@ -69,6 +95,7 @@ object IdeaVimFacade {
             UpdateIncsearchMethod(method, countIndex, booleanIndex, caretIndex, rangeIndex)
         }
     }
+    private val searchPreviewState = ConcurrentHashMap<Editor, SearchPreviewState>()
 
     data class OptionInfo(
         val name: String,
@@ -116,9 +143,9 @@ object IdeaVimFacade {
             return
         }
         val caretOffset = if (initialOffset >= 0) initialOffset else editor.caretModel.primaryCaret.offset
+        storeSearchState(editor)
         if (query.isEmpty()) {
-            resetSearchPreview()
-            restoreCaret(editor, caretOffset)
+            cancelSearchPreview(editor, caretOffset)
             return
         }
 
@@ -170,6 +197,17 @@ object IdeaVimFacade {
         } catch (throwable: Throwable) {
             logger.debug("Failed to reset incremental search state", throwable)
         }
+    }
+
+    fun cancelSearchPreview(editor: Editor, initialOffset: Int) {
+        if (!isAvailable()) {
+            return
+        }
+        restoreSearchState(editor)
+        clearSearchHighlights(editor)
+        resetSearchPreview()
+        closeEditorSearchSession(editor)
+        restoreCaret(editor, initialOffset)
     }
 
     private fun safeOptionName(option: Option<*>?): String? {
@@ -550,6 +588,25 @@ object IdeaVimFacade {
         }
     }
 
+    private fun clearSearchHighlights(editor: Editor) {
+        try {
+            searchHighlightsHelperClass?.getMethod("updateSearchHighlights", String::class.java, java.lang.Boolean.TYPE, java.lang.Boolean.TYPE, java.lang.Boolean.TYPE)
+        } catch (_: Throwable) {
+            // ignore, not the overload we need
+        }
+        try {
+            val removeMethod = searchHighlightsHelperClass?.getDeclaredMethod("removeSearchHighlights", Editor::class.java)
+            if (removeMethod != null) {
+                if (!removeMethod.canAccess(null)) {
+                    removeMethod.isAccessible = true
+                }
+                removeMethod.invoke(null, editor)
+            }
+        } catch (throwable: Throwable) {
+            logger.debug("Failed to clear search highlights", throwable)
+        }
+    }
+
     private fun moveCaret(editor: Editor, offset: Int) {
         ApplicationManager.getApplication().invokeLater {
             if (editor.isDisposed) {
@@ -573,11 +630,45 @@ object IdeaVimFacade {
         }
     }
 
+    fun commitSearchPreview(editor: Editor) {
+        searchPreviewState.remove(editor)
+    }
+
+    private fun storeSearchState(editor: Editor) {
+        if (searchPreviewState.containsKey(editor)) {
+            return
+        }
+        val searchGroup = obtainSearchGroup() ?: return
+        val pattern = (searchGetLastPatternMethod?.invoke(searchGroup) as? String)
+        val substitute = (searchGetLastSubstituteMethod?.invoke(searchGroup) as? String)
+        val directionInt = (searchGetLastDirMethod?.invoke(searchGroup) as? Int) ?: 1
+        val direction = when {
+            directionInt < 0 -> directionBackward
+            else -> directionForward
+        }
+        searchPreviewState.putIfAbsent(editor, SearchPreviewState(pattern, substitute, direction))
+    }
+
+    private fun restoreSearchState(editor: Editor) {
+        val state = searchPreviewState.remove(editor) ?: return
+        val searchGroup = obtainSearchGroup() ?: return
+        val direction = state.direction ?: directionForward ?: return
+        val pattern = state.pattern ?: ""
+        val substitute = state.substitute ?: ""
+        searchSetLastStateMethod?.invoke(searchGroup, editor, pattern, substitute, direction)
+    }
+
     private data class UpdateIncsearchMethod(
         val method: Method,
         val countIndex: Int?,
         val forwardsIndex: Int,
         val caretIndex: Int,
         val rangeIndex: Int,
+    )
+
+    private data class SearchPreviewState(
+        val pattern: String?,
+        val substitute: String?,
+        val direction: Any?,
     )
 }

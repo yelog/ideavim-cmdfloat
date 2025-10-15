@@ -50,7 +50,7 @@ class CmdlineOverlayPanel(
     var onSubmit: ((String) -> Unit)? = null
     var onCancel: (() -> Unit)? = null
     var onSearchPreview: ((String, Int) -> Unit)? = null
-    var onSearchPreviewCancel: (() -> Unit)? = null
+    var onSearchPreviewCancel: ((Int) -> Unit)? = null
 
     private val historySnapshot = history.snapshot()
     private var historyIndex = -1
@@ -285,8 +285,13 @@ class CmdlineOverlayPanel(
             return
         }
         searchCommitted = false
-        searchCancelled = false
-        onSearchPreview?.invoke(text, searchInitialCaretOffset)
+        if (text.isEmpty()) {
+            searchCancelled = true
+            onSearchPreviewCancel?.invoke(searchInitialCaretOffset)
+        } else {
+            searchCancelled = false
+            onSearchPreview?.invoke(text, searchInitialCaretOffset)
+        }
     }
 
     private fun cancelSearchPreview() {
@@ -297,7 +302,8 @@ class CmdlineOverlayPanel(
             return
         }
         searchCancelled = true
-        onSearchPreviewCancel?.invoke()
+        searchCommitted = false
+        onSearchPreviewCancel?.invoke(searchInitialCaretOffset)
     }
 
     private fun markSearchCommitted() {

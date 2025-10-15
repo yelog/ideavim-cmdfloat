@@ -87,6 +87,7 @@ class CmdlineOverlayManager(private val project: Project) {
             refocusEditor(editor)
             ApplicationManager.getApplication().invokeLater {
                 IdeaVimFacade.replay(editor, mode, text)
+                IdeaVimFacade.commitSearchPreview(editor)
             }
         }
         panel.onCancel = {
@@ -98,9 +99,8 @@ class CmdlineOverlayManager(private val project: Project) {
             panel.onSearchPreview = { text, initialOffset ->
                 IdeaVimFacade.previewSearch(editor, mode, text, initialOffset)
             }
-            panel.onSearchPreviewCancel = {
-                IdeaVimFacade.resetSearchPreview()
-                IdeaVimFacade.restoreCaret(editor, panel.getSearchInitialCaretOffset())
+            panel.onSearchPreviewCancel = { initialOffset ->
+                IdeaVimFacade.cancelSearchPreview(editor, initialOffset)
             }
         }
 
