@@ -197,6 +197,7 @@ class CmdlineOverlayPanel(
             minimumSize = Dimension(JBUI.scale(200), inputHeight)
             margin = JBUI.insets(0, 1, 0, 6)
             putClientProperty("JComponent.roundRect", java.lang.Boolean.TRUE)
+            focusTraversalKeysEnabled = false
             document.addDocumentListener(object : DocumentListener {
                 override fun insertUpdate(event: DocumentEvent) = handleDocumentChange(this@apply)
                 override fun removeUpdate(event: DocumentEvent) = handleDocumentChange(this@apply)
@@ -262,6 +263,26 @@ class CmdlineOverlayPanel(
                 }
             }
         })
+
+        val suggestionPreviousAction = object : AbstractAction() {
+            override fun actionPerformed(e: ActionEvent?) {
+                suggestionSupport?.moveSelection(previous = true)
+            }
+        }
+        val suggestionNextAction = object : AbstractAction() {
+            override fun actionPerformed(e: ActionEvent?) {
+                suggestionSupport?.moveSelection(previous = false)
+            }
+        }
+
+        inputMap.put(KeyStroke.getKeyStroke("shift TAB"), ACTION_SUGGESTION_PREVIOUS)
+        actionMap.put(ACTION_SUGGESTION_PREVIOUS, suggestionPreviousAction)
+        inputMap.put(KeyStroke.getKeyStroke("TAB"), ACTION_SUGGESTION_NEXT)
+        actionMap.put(ACTION_SUGGESTION_NEXT, suggestionNextAction)
+        inputMap.put(KeyStroke.getKeyStroke("ctrl P"), ACTION_SUGGESTION_PREVIOUS)
+        actionMap.put(ACTION_SUGGESTION_PREVIOUS, suggestionPreviousAction)
+        inputMap.put(KeyStroke.getKeyStroke("ctrl N"), ACTION_SUGGESTION_NEXT)
+        actionMap.put(ACTION_SUGGESTION_NEXT, suggestionNextAction)
     }
 
     private fun navigateHistory(previous: Boolean, textField: JBTextField) {
@@ -1008,6 +1029,8 @@ class CmdlineOverlayPanel(
         private const val ACTION_CANCEL = "ideavim.cmdline.cancel"
         private const val ACTION_HISTORY_PREVIOUS = "ideavim.cmdline.history.previous"
         private const val ACTION_HISTORY_NEXT = "ideavim.cmdline.history.next"
+        private const val ACTION_SUGGESTION_PREVIOUS = "ideavim.cmdline.suggestion.previous"
+        private const val ACTION_SUGGESTION_NEXT = "ideavim.cmdline.suggestion.next"
     }
 
     private fun setTextProgrammatically(textField: JBTextField, value: String) {
