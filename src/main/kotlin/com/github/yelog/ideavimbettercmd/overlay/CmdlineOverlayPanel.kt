@@ -74,7 +74,7 @@ class CmdlineOverlayPanel(
         val scheme = EditorColorsManager.getInstance().globalScheme
         focusComponent = createTextField(scheme)
         suggestionSupport = when (mode) {
-            OverlayMode.COMMAND -> CommandSuggestionSupport(focusComponent, scheme)
+            OverlayMode.COMMAND -> CommandSuggestionSupport(focusComponent, scheme, searchCandidates)
             OverlayMode.SEARCH_FORWARD, OverlayMode.SEARCH_BACKWARD -> SearchSuggestionSupport(
                 focusComponent,
                 scheme,
@@ -495,6 +495,7 @@ class CmdlineOverlayPanel(
             foreground = textField.foreground
             putClientProperty("JComponent.roundRect", java.lang.Boolean.TRUE)
         }
+        private var selectionBaseText: String? = null
 
         private val scrollPane = JBScrollPane(list).apply {
             isOpaque = false
@@ -521,6 +522,21 @@ class CmdlineOverlayPanel(
                     }
                 }
             })
+            list.addListSelectionListener { event ->
+                if (event.valueIsAdjusting) {
+                    return@addListSelectionListener
+                }
+                val index = list.selectedIndex
+                if (index >= 0) {
+                    if (selectionBaseText == null) {
+                        selectionBaseText = textField.text
+                    }
+                    val value = model.getElementAt(index)
+                    setTextProgrammatically(textField, value)
+                } else {
+                    restoreSelectionBase()
+                }
+            }
         }
 
         override fun install(parent: JComponent) {
@@ -537,7 +553,7 @@ class CmdlineOverlayPanel(
                 dispose()
                 return
             }
-            val matches = collectMatches(query)
+            val matches = matchSearchCandidates(candidates, query, maxSuggestions)
             if (matches.isEmpty()) {
                 dispose()
             } else {
@@ -545,66 +561,10 @@ class CmdlineOverlayPanel(
             }
         }
 
-        private fun collectMatches(query: String): List<SearchMatchCandidate> {
-            val normalized = query.lowercase(Locale.ROOT)
-            if (normalized.isEmpty()) {
-                return emptyList()
-            }
-            return candidates.asSequence()
-                .mapNotNull { candidate -> matchCandidate(normalized, candidate) }
-                .sortedWith(matchComparator)
-                .take(maxSuggestions)
-                .toList()
-        }
-
-        private fun matchCandidate(normalizedQuery: String, candidate: String): SearchMatchCandidate? {
-            if (normalizedQuery.length > candidate.length) {
-                return null
-            }
-            val candidateLower = candidate.lowercase(Locale.ROOT)
-            val positions = mutableListOf<Int>()
-            var queryIndex = 0
-            for (index in candidateLower.indices) {
-                if (candidateLower[index] == normalizedQuery[queryIndex]) {
-                    positions.add(index)
-                    queryIndex += 1
-                    if (queryIndex == normalizedQuery.length) {
-                        break
-                    }
-                }
-            }
-            if (queryIndex != normalizedQuery.length || positions.isEmpty()) {
-                return null
-            }
-            var maxStreak = 1
-            var currentStreak = 1
-            var sumIndices = positions.first()
-            for (i in 1 until positions.size) {
-                val prev = positions[i - 1]
-                val current = positions[i]
-                sumIndices += current
-                if (current == prev + 1) {
-                    currentStreak += 1
-                    if (currentStreak > maxStreak) {
-                        maxStreak = currentStreak
-                    }
-                } else {
-                    currentStreak = 1
-                }
-            }
-            val span = positions.last() - positions.first()
-            return SearchMatchCandidate(candidate, maxStreak, positions.first(), span, sumIndices)
-        }
-
-        private val matchComparator = compareByDescending<SearchMatchCandidate> { it.maxConsecutive }
-            .thenBy { it.firstIndex }
-            .thenBy { it.span }
-            .thenBy { it.sumIndices }
-            .thenBy { it.word.length }
-            .thenBy { it.word.lowercase(Locale.ROOT) }
-            .thenBy { it.word }
-
         private fun updateSuggestions(words: List<String>) {
+            if (list.selectedIndex != -1) {
+                list.clearSelection()
+            }
             model.replaceAll(words)
             if (model.isEmpty) {
                 dispose()
@@ -707,7 +667,7 @@ class CmdlineOverlayPanel(
             popup?.cancel()
             popup = null
             model.replaceAll(emptyList())
-            list.clearSelection()
+            selectionBaseText = null
         }
 
         private fun ensurePopup(): JBPopup {
@@ -733,11 +693,20 @@ class CmdlineOverlayPanel(
         }
 
         private fun isActive(): Boolean = popup?.let { !it.isDisposed && model.size > 0 } == true
+
+        private fun restoreSelectionBase() {
+            val base = selectionBaseText ?: return
+            selectionBaseText = null
+            if (textField.text != base) {
+                setTextProgrammatically(textField, base)
+            }
+        }
     }
 
     private inner class CommandSuggestionSupport(
         private val textField: JBTextField,
         private val scheme: EditorColorsScheme,
+        private val searchCandidates: List<String>,
     ) : SuggestionSupport {
         private val model = CollectionListModel<SuggestionEntry>()
         private val list = JBList(model).apply {
@@ -762,6 +731,9 @@ class CmdlineOverlayPanel(
                         is SuggestionEntry.ExCommand -> {
                             append(value.data.displayText, SimpleTextAttributes.REGULAR_ATTRIBUTES)
                         }
+                        is SuggestionEntry.SearchWord -> {
+                            append(value.word, SimpleTextAttributes.REGULAR_ATTRIBUTES)
+                        }
                         is SuggestionEntry.Action -> {
                             val presentation = value.data.presentation
                             if (!presentation.isNullOrBlank()) {
@@ -783,6 +755,7 @@ class CmdlineOverlayPanel(
                 }
             }
         }
+        private var selectionBaseText: String? = null
 
         private val scrollPane = JBScrollPane(list).apply {
             isOpaque = false
@@ -794,6 +767,7 @@ class CmdlineOverlayPanel(
         }
 
         private val maxVisibleRows = 8
+        private val maxSearchSuggestions = 50
         private var popup: JBPopup? = null
         private var parentComponent: JComponent? = null
         private var currentHeight: Int = JBUI.scale(80)
@@ -808,6 +782,20 @@ class CmdlineOverlayPanel(
                     }
                 }
             })
+            list.addListSelectionListener { event ->
+                if (event.valueIsAdjusting) {
+                    return@addListSelectionListener
+                }
+                val index = list.selectedIndex
+                if (index >= 0) {
+                    if (selectionBaseText == null) {
+                        selectionBaseText = textField.text
+                    }
+                    applySelection(index)
+                } else {
+                    restoreSelectionBase()
+                }
+            }
         }
 
         override fun install(parent: JComponent) {
@@ -815,6 +803,18 @@ class CmdlineOverlayPanel(
         }
 
         override fun onUserInput(content: String) {
+            selectionBaseText = null
+            val substitutionQuery = parseSubstitutionSearchQuery(content)
+            if (substitutionQuery != null && searchCandidates.isNotEmpty()) {
+                val matches = matchSearchCandidates(searchCandidates, substitutionQuery.query, maxSearchSuggestions)
+                if (matches.isEmpty()) {
+                    dispose()
+                } else {
+                    updateSuggestions(matches.map { SuggestionEntry.SearchWord(it.word, substitutionQuery) })
+                }
+                return
+            }
+
             val actionQuery = parseActionQuery(content)
             if (actionQuery != null) {
                 val suggestions = ActionCommandCompletion.suggest(actionQuery.query, maxVisibleRows)
@@ -890,22 +890,15 @@ class CmdlineOverlayPanel(
             if (index < 0 || index >= model.size) {
                 return false
             }
-            when (val suggestion = model.getElementAt(index)) {
-                is SuggestionEntry.ExCommand -> {
-                    setTextProgrammatically(textField, suggestion.data.executionText)
-                }
-                is SuggestionEntry.Action -> {
-                    setTextProgrammatically(textField, suggestion.prefix + suggestion.data.actionId)
-                }
-                is SuggestionEntry.Option -> {
-                    setTextProgrammatically(textField, suggestion.prefix + suggestion.data.name)
-                }
-            }
+            applySelection(index)
             dispose()
             return true
         }
 
         private fun updateSuggestions(suggestions: List<SuggestionEntry>) {
+            if (list.selectedIndex != -1) {
+                list.clearSelection()
+            }
             model.replaceAll(suggestions)
             if (model.isEmpty) {
                 dispose()
@@ -962,6 +955,109 @@ class CmdlineOverlayPanel(
                 }
             }
             return current
+        }
+
+        private fun parseSubstitutionSearchQuery(content: String): SubstitutionQuery? {
+            if (content.isEmpty()) {
+                return null
+            }
+            val length = content.length
+            var index = 0
+
+            fun skipWhitespace() {
+                while (index < length && content[index].isWhitespace()) {
+                    index += 1
+                }
+            }
+
+            skipWhitespace()
+            if (index < length && content[index] == ':') {
+                index += 1
+            }
+            skipWhitespace()
+
+            while (index < length) {
+                val before = index
+                val ch = content[index]
+                when {
+                    ch == '\'' && index + 1 < length -> index += 2
+                    ch.isWhitespace() || ch.isDigit() || ch == '%' || ch == '$' || ch == '.' || ch == ',' || ch == ';' || ch == '-' || ch == '+' -> index += 1
+                }
+                if (index == before) {
+                    break
+                }
+            }
+
+            skipWhitespace()
+            if (index >= length) {
+                return null
+            }
+
+            val remaining = content.substring(index)
+            val commandLength = when {
+                remaining.startsWith("substitute", ignoreCase = true) -> "substitute".length
+                remaining.startsWith("s", ignoreCase = true) -> 1
+                else -> return null
+            }
+
+            index += commandLength
+            while (index < length && content[index].isWhitespace()) {
+                index += 1
+            }
+            if (index >= length) {
+                return null
+            }
+
+            val delimiter = content[index]
+            if (delimiter != '/') {
+                return null
+            }
+
+            val patternStart = index + 1
+            var cursor = patternStart
+            var escaping = false
+            while (cursor < length) {
+                val ch = content[cursor]
+                if (!escaping && ch == delimiter) {
+                    return null
+                }
+                if (!escaping && ch == '\\') {
+                    escaping = true
+                } else {
+                    escaping = false
+                }
+                cursor += 1
+            }
+
+            val prefix = content.substring(0, patternStart)
+            val query = content.substring(patternStart)
+            return SubstitutionQuery(prefix, query, "")
+        }
+
+        private fun applySelection(index: Int) {
+            when (val suggestion = model.getElementAt(index)) {
+                is SuggestionEntry.SearchWord -> {
+                    val newValue = suggestion.context.prefix + suggestion.word + suggestion.context.suffix
+                    setTextProgrammatically(textField, newValue)
+                }
+                is SuggestionEntry.ExCommand -> {
+                    setTextProgrammatically(textField, suggestion.data.executionText)
+                }
+                is SuggestionEntry.Action -> {
+                    setTextProgrammatically(textField, suggestion.prefix + suggestion.data.actionId)
+                }
+                is SuggestionEntry.Option -> {
+                    setTextProgrammatically(textField, suggestion.prefix + suggestion.data.name)
+                }
+            }
+        }
+
+        private fun restoreSelectionBase() {
+            val base = selectionBaseText ?: return
+            selectionBaseText = null
+            if (textField.text != base) {
+                setTextProgrammatically(textField, base)
+            }
         }
 
         private fun parseSetOptionQuery(content: String): OptionQuery? {
@@ -1029,7 +1125,7 @@ class CmdlineOverlayPanel(
             popup?.cancel()
             popup = null
             model.replaceAll(emptyList())
-            list.clearSelection()
+            selectionBaseText = null
         }
 
         private fun parseActionQuery(content: String): ActionQuery? {
@@ -1071,6 +1167,75 @@ class CmdlineOverlayPanel(
     }
 }
 
+private val searchMatchComparator = compareByDescending<SearchMatchCandidate> { it.maxConsecutive }
+    .thenBy { it.firstIndex }
+    .thenBy { it.span }
+    .thenBy { it.sumIndices }
+    .thenBy { it.word.length }
+    .thenBy { it.word.lowercase(Locale.ROOT) }
+    .thenBy { it.word }
+
+private fun matchSearchCandidates(
+    candidates: List<String>,
+    rawQuery: String,
+    limit: Int,
+): List<SearchMatchCandidate> {
+    val normalized = rawQuery.trim().lowercase(Locale.ROOT)
+    if (normalized.isEmpty()) {
+        return emptyList()
+    }
+    return candidates.asSequence()
+        .mapNotNull { candidate -> computeSearchMatch(normalized, candidate) }
+        .sortedWith(searchMatchComparator)
+        .take(limit)
+        .toList()
+}
+
+private fun computeSearchMatch(normalizedQuery: String, candidate: String): SearchMatchCandidate? {
+    if (normalizedQuery.length > candidate.length) {
+        return null
+    }
+    val candidateLower = candidate.lowercase(Locale.ROOT)
+    val positions = mutableListOf<Int>()
+    var queryIndex = 0
+    for (index in candidateLower.indices) {
+        if (candidateLower[index] == normalizedQuery[queryIndex]) {
+            positions.add(index)
+            queryIndex += 1
+            if (queryIndex == normalizedQuery.length) {
+                break
+            }
+        }
+    }
+    if (queryIndex != normalizedQuery.length || positions.isEmpty()) {
+        return null
+    }
+    var maxStreak = 1
+    var currentStreak = 1
+    var sumIndices = positions.first()
+    for (i in 1 until positions.size) {
+        val prev = positions[i - 1]
+        val current = positions[i]
+        sumIndices += current
+        if (current == prev + 1) {
+            currentStreak += 1
+            if (currentStreak > maxStreak) {
+                maxStreak = currentStreak
+            }
+        } else {
+            currentStreak = 1
+        }
+    }
+    val span = positions.last() - positions.first()
+    return SearchMatchCandidate(candidate, maxStreak, positions.first(), span, sumIndices)
+}
+
+private data class SubstitutionQuery(
+    val prefix: String,
+    val query: String,
+    val suffix: String,
+)
+
 private data class SearchMatchCandidate(
     val word: String,
     val maxConsecutive: Int,
@@ -1083,6 +1248,7 @@ private data class ActionQuery(val prefix: String, val query: String)
 private data class OptionQuery(val prefix: String, val query: String)
 
 private sealed interface SuggestionEntry {
+    data class SearchWord(val word: String, val context: SubstitutionQuery) : SuggestionEntry
     data class ExCommand(val data: ExCommandCompletion.Suggestion) : SuggestionEntry
     data class Action(val data: ActionCommandCompletion.Suggestion, val prefix: String) : SuggestionEntry
     data class Option(val data: OptionCommandCompletion.Suggestion, val prefix: String) : SuggestionEntry

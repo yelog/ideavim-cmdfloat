@@ -80,8 +80,7 @@ class CmdlineOverlayManager(private val project: Project) {
 
     private fun showOverlay(editor: Editor, mode: OverlayMode, history: CommandHistory) {
         val searchCandidates = when (mode) {
-            OverlayMode.SEARCH_FORWARD, OverlayMode.SEARCH_BACKWARD -> collectSearchWords(editor)
-            else -> emptyList()
+            OverlayMode.SEARCH_FORWARD, OverlayMode.SEARCH_BACKWARD, OverlayMode.COMMAND -> collectSearchWords(editor)
         }
         val panel = CmdlineOverlayPanel(mode, history, editor, searchCandidates)
         panel.setSearchInitialCaretOffset(editor.caretModel.primaryCaret.offset)
