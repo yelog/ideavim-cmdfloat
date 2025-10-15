@@ -109,16 +109,43 @@ object IdeaVimFacade {
     }
 
     fun isEditorInNormalMode(editor: Editor): Boolean {
+        val modeName = editorModeName(editor) ?: return false
+        return modeName == "COMMAND"
+    }
+
+    fun isEditorCommandOverlayAllowed(editor: Editor): Boolean {
+        val modeName = editorModeName(editor) ?: return false
+        if (modeName == "COMMAND") {
+            return true
+        }
+        if (modeName.startsWith("VISUAL")) {
+            return true
+        }
+        if (modeName == "SELECT") {
+            return true
+        }
+        return false
+    }
+
+    fun hasVisualSelection(editor: Editor): Boolean {
         if (!isAvailable()) {
             return false
         }
+        val modeName = editorModeName(editor) ?: return false
+        return modeName.startsWith("VISUAL") || modeName == "SELECT"
+    }
+
+    private fun editorModeName(editor: Editor): String? {
+        if (!isAvailable()) {
+            return null
+        }
         return try {
-            val commandState = commandStateInstanceMethod?.invoke(null, editor) ?: return false
+            val commandState = commandStateInstanceMethod?.invoke(null, editor) ?: return null
             val mode = commandStateModeMethod?.invoke(commandState)
-            (mode as? Enum<*>)?.name == "COMMAND"
+            (mode as? Enum<*>)?.name ?: mode?.toString()
         } catch (throwable: Throwable) {
             logger.warn("Failed to query IdeaVim command state.", throwable)
-            false
+            null
         }
     }
 

@@ -1,6 +1,7 @@
 package com.github.yelog.ideavimbettercmd.overlay
 
 import com.intellij.icons.AllIcons
+import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.editor.colors.EditorColorsManager
 import com.intellij.openapi.editor.colors.EditorColorsScheme
 import com.intellij.openapi.ui.popup.JBPopup
@@ -40,6 +41,7 @@ import kotlin.math.min
 class CmdlineOverlayPanel(
     private val mode: OverlayMode,
     history: CommandHistory,
+    private val editor: Editor,
 ) {
 
     val component: JComponent
@@ -116,11 +118,35 @@ class CmdlineOverlayPanel(
         applyPreferredSize()
 
         installActions(focusComponent)
+
+        if (mode == OverlayMode.COMMAND && historySnapshot.isNotEmpty() && historySnapshot.firstOrNull()?.startsWith("<,'>") == true) {
+            // no-op
+        }
     }
 
     fun requestFocus() {
-        focusComponent.selectAll()
+        val hasPrefix = applyVisualSelectionPrefixIfNeeded()
+        if (!hasPrefix) {
+            focusComponent.selectAll()
+        } else {
+            focusComponent.caretPosition = focusComponent.text.length
+        }
         focusComponent.requestFocusInWindow()
+    }
+
+    private fun applyVisualSelectionPrefixIfNeeded(): Boolean {
+        if (mode != OverlayMode.COMMAND) {
+            return false
+        }
+        if (!IdeaVimFacade.hasVisualSelection(editor)) {
+            return false
+        }
+        val current = focusComponent.text
+        if (current.isNotEmpty()) {
+            return current.startsWith("'<,'>")
+        }
+        focusComponent.text = "'<,'>"
+        return true
     }
 
     fun setPreferredWidth(width: Int) {

@@ -42,8 +42,8 @@ class CmdlineOverlayManager(private val project: Project) {
         }
 
         val editor = currentEditor() ?: return false
-        if (!IdeaVimFacade.isEditorInNormalMode(editor)) {
-            logger.debug("Editor not in IdeaVim normal mode; skip overlay display.")
+        if (!IdeaVimFacade.isEditorCommandOverlayAllowed(editor)) {
+            logger.debug("Editor not in a compatible IdeaVim mode; skip overlay display.")
             return false
         }
 
@@ -77,7 +77,7 @@ class CmdlineOverlayManager(private val project: Project) {
     }
 
     private fun showOverlay(editor: Editor, mode: OverlayMode, history: CommandHistory) {
-        val panel = CmdlineOverlayPanel(mode, history)
+        val panel = CmdlineOverlayPanel(mode, history, editor)
         panel.setSearchInitialCaretOffset(editor.caretModel.primaryCaret.offset)
         panel.onSubmit = { text ->
             if (text.isNotEmpty()) {
