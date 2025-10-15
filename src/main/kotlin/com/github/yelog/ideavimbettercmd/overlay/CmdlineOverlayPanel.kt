@@ -25,6 +25,7 @@ import java.awt.Point
 import java.awt.event.ActionEvent
 import java.awt.event.HierarchyEvent
 import java.awt.event.HierarchyListener
+import java.util.Locale
 import javax.swing.AbstractAction
 import javax.swing.ActionMap
 import javax.swing.JComponent
@@ -42,6 +43,7 @@ class CmdlineOverlayPanel(
     private val mode: OverlayMode,
     history: CommandHistory,
     private val editor: Editor,
+    private val searchCandidates: List<String> = emptyList(),
 ) {
 
     val component: JComponent
@@ -60,7 +62,7 @@ class CmdlineOverlayPanel(
     private var historyIndex = -1
     private var draftText: String = ""
     private var programmaticUpdate = false
-    private var suggestionSupport: CommandSuggestionSupport? = null
+    private var suggestionSupport: SuggestionSupport? = null
     private var preferredWidth = JBUI.scale(400)
     private val basePreferredHeight: Int
     private var searchCommitted = false
@@ -71,8 +73,13 @@ class CmdlineOverlayPanel(
     init {
         val scheme = EditorColorsManager.getInstance().globalScheme
         focusComponent = createTextField(scheme)
-        if (mode == OverlayMode.COMMAND) {
-            suggestionSupport = CommandSuggestionSupport(focusComponent, scheme)
+        suggestionSupport = when (mode) {
+            OverlayMode.COMMAND -> CommandSuggestionSupport(focusComponent, scheme)
+            OverlayMode.SEARCH_FORWARD, OverlayMode.SEARCH_BACKWARD -> SearchSuggestionSupport(
+                focusComponent,
+                scheme,
+                searchCandidates,
+            )
         }
 
         val inputPanel = JBPanel<JBPanel<*>>(java.awt.BorderLayout()).apply {
@@ -444,10 +451,255 @@ class CmdlineOverlayPanel(
         return mode == OverlayMode.SEARCH_FORWARD || mode == OverlayMode.SEARCH_BACKWARD
     }
 
+    private interface SuggestionSupport {
+        fun install(parent: JComponent)
+        fun onUserInput(content: String)
+        fun moveSelection(previous: Boolean): Boolean
+        fun acceptSelection(): Boolean
+        fun updatePopupWidth(width: Int)
+        fun dispose()
+    }
+
+    private inner class SearchSuggestionSupport(
+        private val textField: JBTextField,
+        private val scheme: EditorColorsScheme,
+        private val candidates: List<String>,
+    ) : SuggestionSupport {
+        private val model = CollectionListModel<String>()
+        private val list = JBList(model).apply {
+            selectionMode = ListSelectionModel.SINGLE_SELECTION
+            fixedCellHeight = JBUI.scale(20)
+            border = JBUI.Borders.empty(0, 6, 0, 6)
+            background = textField.background
+            foreground = textField.foreground
+            putClientProperty("JComponent.roundRect", java.lang.Boolean.TRUE)
+        }
+
+        private val scrollPane = JBScrollPane(list).apply {
+            isOpaque = false
+            border = JBUI.Borders.empty(2, 0, 4, 0)
+            viewport.isOpaque = false
+            horizontalScrollBarPolicy = JBScrollPane.HORIZONTAL_SCROLLBAR_NEVER
+            verticalScrollBar.unitIncrement = JBUI.scale(12)
+            background = scheme.toOverlayInputBackground()
+        }
+
+        private val maxVisibleRows = 8
+        private val maxSuggestions = 50
+        private var popup: JBPopup? = null
+        private var parentComponent: JComponent? = null
+        private var currentHeight: Int = JBUI.scale(80)
+
+        init {
+            textField.addHierarchyListener(object : HierarchyListener {
+                override fun hierarchyChanged(event: HierarchyEvent) {
+                    if (event.changeFlags and HierarchyEvent.DISPLAYABILITY_CHANGED.toLong() != 0L &&
+                        !textField.isDisplayable
+                    ) {
+                        dispose()
+                    }
+                }
+            })
+        }
+
+        override fun install(parent: JComponent) {
+            parentComponent = parent
+        }
+
+        override fun onUserInput(content: String) {
+            if (candidates.isEmpty()) {
+                dispose()
+                return
+            }
+            val query = content.trim()
+            if (query.isEmpty()) {
+                dispose()
+                return
+            }
+            val matches = collectMatches(query)
+            if (matches.isEmpty()) {
+                dispose()
+            } else {
+                updateSuggestions(matches.map { it.word })
+            }
+        }
+
+        private fun collectMatches(query: String): List<SearchMatchCandidate> {
+            val normalized = query.lowercase(Locale.ROOT)
+            if (normalized.isEmpty()) {
+                return emptyList()
+            }
+            return candidates.asSequence()
+                .mapNotNull { candidate -> matchCandidate(normalized, candidate) }
+                .sortedWith(matchComparator)
+                .take(maxSuggestions)
+                .toList()
+        }
+
+        private fun matchCandidate(normalizedQuery: String, candidate: String): SearchMatchCandidate? {
+            if (normalizedQuery.length > candidate.length) {
+                return null
+            }
+            val candidateLower = candidate.lowercase(Locale.ROOT)
+            val positions = mutableListOf<Int>()
+            var queryIndex = 0
+            for (index in candidateLower.indices) {
+                if (candidateLower[index] == normalizedQuery[queryIndex]) {
+                    positions.add(index)
+                    queryIndex += 1
+                    if (queryIndex == normalizedQuery.length) {
+                        break
+                    }
+                }
+            }
+            if (queryIndex != normalizedQuery.length || positions.isEmpty()) {
+                return null
+            }
+            var maxStreak = 1
+            var currentStreak = 1
+            var sumIndices = positions.first()
+            for (i in 1 until positions.size) {
+                val prev = positions[i - 1]
+                val current = positions[i]
+                sumIndices += current
+                if (current == prev + 1) {
+                    currentStreak += 1
+                    if (currentStreak > maxStreak) {
+                        maxStreak = currentStreak
+                    }
+                } else {
+                    currentStreak = 1
+                }
+            }
+            val span = positions.last() - positions.first()
+            return SearchMatchCandidate(candidate, maxStreak, positions.first(), span, sumIndices)
+        }
+
+        private val matchComparator = compareByDescending<SearchMatchCandidate> { it.maxConsecutive }
+            .thenBy { it.firstIndex }
+            .thenBy { it.span }
+            .thenBy { it.sumIndices }
+            .thenBy { it.word.length }
+            .thenBy { it.word.lowercase(Locale.ROOT) }
+            .thenBy { it.word }
+
+        private fun updateSuggestions(words: List<String>) {
+            model.replaceAll(words)
+            if (model.isEmpty) {
+                dispose()
+                return
+            }
+            if (list.selectedIndex == -1 || list.selectedIndex >= model.size) {
+                list.selectedIndex = 0
+            }
+            val visibleRows = min(model.size, maxVisibleRows)
+            val rowHeight = list.fixedCellHeight.takeIf { it > 0 }
+                ?: list.preferredSize.height.coerceAtLeast(JBUI.scale(20))
+            val parent = parentComponent ?: return dispose()
+
+            val parentWidth = parent.width.takeIf { it > 0 } ?: parent.preferredSize.width
+            val width = parentWidth.coerceAtLeast(JBUI.scale(200))
+            val height = visibleRows * rowHeight + JBUI.scale(4)
+            currentHeight = height
+            val size = Dimension(width, height)
+            scrollPane.preferredSize = size
+            scrollPane.minimumSize = size
+            scrollPane.maximumSize = size
+
+            val popup = ensurePopup()
+            popup.setSize(size)
+            popup.setLocation(RelativePoint(parent, Point(0, parent.height)).screenPoint)
+            list.ensureIndexIsVisible(list.selectedIndex)
+            scrollPane.revalidate()
+            scrollPane.repaint()
+        }
+
+        override fun moveSelection(previous: Boolean): Boolean {
+            if (!isActive()) {
+                return false
+            }
+            val current = list.selectedIndex
+            if (current == -1) {
+                val target = if (previous) model.size - 1 else 0
+                list.selectedIndex = target
+                list.ensureIndexIsVisible(target)
+                return true
+            }
+            val target = current + if (previous) -1 else 1
+            if (target < 0 || target >= model.size) {
+                return false
+            }
+            list.selectedIndex = target
+            list.ensureIndexIsVisible(target)
+            return true
+        }
+
+        override fun acceptSelection(): Boolean {
+            if (!isActive()) {
+                return false
+            }
+            val index = if (list.selectedIndex >= 0) list.selectedIndex else 0
+            if (index < 0 || index >= model.size) {
+                dispose()
+                return false
+            }
+            val value = model.getElementAt(index)
+            setTextProgrammatically(textField, value)
+            dispose()
+            return true
+        }
+
+        override fun updatePopupWidth(width: Int) {
+            val popup = popup ?: return
+            if (popup.isDisposed) {
+                return
+            }
+            val size = Dimension(width, currentHeight)
+            popup.setSize(size)
+            scrollPane.preferredSize = size
+            scrollPane.minimumSize = size
+            scrollPane.maximumSize = size
+            parentComponent?.let {
+                popup.setLocation(RelativePoint(it, Point(0, it.height)).screenPoint)
+            }
+        }
+
+        override fun dispose() {
+            popup?.cancel()
+            popup = null
+            model.replaceAll(emptyList())
+            list.clearSelection()
+        }
+
+        private fun ensurePopup(): JBPopup {
+            var current = popup
+            if (current == null || current.isDisposed) {
+                current = JBPopupFactory.getInstance()
+                    .createComponentPopupBuilder(scrollPane, list)
+                    .setFocusable(false)
+                    .setRequestFocus(false)
+                    .setCancelKeyEnabled(false)
+                    .setCancelOnClickOutside(false)
+                    .setCancelOnOtherWindowOpen(true)
+                    .setCancelOnWindowDeactivation(true)
+                    .setMovable(false)
+                    .setResizable(false)
+                    .createPopup()
+                popup = current
+                parentComponent?.let {
+                    current.show(RelativePoint(it, Point(0, it.height)))
+                }
+            }
+            return current
+        }
+
+        private fun isActive(): Boolean = popup?.let { !it.isDisposed && model.size > 0 } == true
+    }
+
     private inner class CommandSuggestionSupport(
         private val textField: JBTextField,
         private val scheme: EditorColorsScheme,
-    ) {
+    ) : SuggestionSupport {
         private val model = CollectionListModel<SuggestionEntry>()
         private val list = JBList(model).apply {
             selectionMode = ListSelectionModel.SINGLE_SELECTION
@@ -519,11 +771,11 @@ class CmdlineOverlayPanel(
             })
         }
 
-        fun install(parent: JComponent) {
+        override fun install(parent: JComponent) {
             parentComponent = parent
         }
 
-        fun onUserInput(content: String) {
+        override fun onUserInput(content: String) {
             val actionQuery = parseActionQuery(content)
             if (actionQuery != null) {
                 val suggestions = ActionCommandCompletion.suggest(actionQuery.query, maxVisibleRows)
@@ -553,7 +805,7 @@ class CmdlineOverlayPanel(
             }
         }
 
-        fun moveSelection(previous: Boolean): Boolean {
+        override fun moveSelection(previous: Boolean): Boolean {
             if (!isActive()) {
                 return false
             }
@@ -573,7 +825,7 @@ class CmdlineOverlayPanel(
             return true
         }
 
-        fun acceptSelection(): Boolean {
+        override fun acceptSelection(): Boolean {
             if (!isActive()) {
                 return false
             }
@@ -695,7 +947,7 @@ class CmdlineOverlayPanel(
             return OptionQuery(prefix, query)
         }
 
-        fun updatePopupWidth(width: Int) {
+        override fun updatePopupWidth(width: Int) {
             val popup = popup ?: return
             if (popup.isDisposed) {
                 return
@@ -710,7 +962,7 @@ class CmdlineOverlayPanel(
             }
         }
 
-        fun dispose() {
+        override fun dispose() {
             popup?.cancel()
             popup = null
             model.replaceAll(emptyList())
@@ -753,6 +1005,14 @@ class CmdlineOverlayPanel(
         programmaticUpdate = false
     }
 }
+
+private data class SearchMatchCandidate(
+    val word: String,
+    val maxConsecutive: Int,
+    val firstIndex: Int,
+    val span: Int,
+    val sumIndices: Int,
+)
 
 private data class ActionQuery(val prefix: String, val query: String)
 private data class OptionQuery(val prefix: String, val query: String)

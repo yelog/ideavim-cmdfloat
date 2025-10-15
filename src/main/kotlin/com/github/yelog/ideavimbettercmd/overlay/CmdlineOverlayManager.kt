@@ -20,6 +20,8 @@ import com.intellij.util.ui.JBUI
 import java.awt.Component
 import java.awt.Dimension
 import java.awt.Point
+import java.util.LinkedHashMap
+import java.util.Locale
 import javax.swing.SwingUtilities
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -77,7 +79,11 @@ class CmdlineOverlayManager(private val project: Project) {
     }
 
     private fun showOverlay(editor: Editor, mode: OverlayMode, history: CommandHistory) {
-        val panel = CmdlineOverlayPanel(mode, history, editor)
+        val searchCandidates = when (mode) {
+            OverlayMode.SEARCH_FORWARD, OverlayMode.SEARCH_BACKWARD -> collectSearchWords(editor)
+            else -> emptyList()
+        }
+        val panel = CmdlineOverlayPanel(mode, history, editor, searchCandidates)
         panel.setSearchInitialCaretOffset(editor.caretModel.primaryCaret.offset)
         panel.onSubmit = { text ->
             if (text.isNotEmpty()) {
@@ -184,6 +190,54 @@ class CmdlineOverlayManager(private val project: Project) {
             return null
         }
         return editor
+    }
+
+    private fun collectSearchWords(editor: Editor): List<String> {
+        val application = ApplicationManager.getApplication()
+        val extractor = {
+            val document = editor.document
+            val text = document.charsSequence
+            val unique = LinkedHashMap<String, String>()
+            val buffer = StringBuilder()
+
+            fun flush() {
+                if (buffer.isEmpty()) {
+                    return
+                }
+                if (unique.size >= MAX_SEARCH_WORDS) {
+                    buffer.setLength(0)
+                    return
+                }
+                val word = buffer.toString()
+                buffer.setLength(0)
+                if (word.any { it.isLetterOrDigit() }) {
+                    val key = word.lowercase(Locale.ROOT)
+                    unique.putIfAbsent(key, word)
+                }
+            }
+
+            for (char in text) {
+                if (char.isLetterOrDigit() || char == '-' || char == '_') {
+                    buffer.append(char)
+                } else {
+                    flush()
+                }
+                if (unique.size >= MAX_SEARCH_WORDS) {
+                    break
+                }
+            }
+            flush()
+            unique.values.toList()
+        }
+        return if (application.isReadAccessAllowed) {
+            extractor()
+        } else {
+            application.runReadAction<List<String>> { extractor() }
+        }
+    }
+
+    companion object {
+        private const val MAX_SEARCH_WORDS = 5000
     }
 }
 
