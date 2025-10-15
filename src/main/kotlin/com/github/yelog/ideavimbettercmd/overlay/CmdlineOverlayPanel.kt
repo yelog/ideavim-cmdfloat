@@ -5,6 +5,7 @@ import com.intellij.openapi.editor.colors.EditorColorsManager
 import com.intellij.openapi.editor.colors.EditorColorsScheme
 import com.intellij.openapi.ui.popup.JBPopup
 import com.intellij.openapi.ui.popup.JBPopupFactory
+import com.github.yelog.ideavimbettercmd.overlay.OptionCommandCompletion
 import com.intellij.ui.CollectionListModel
 import com.intellij.ui.ColoredListCellRenderer
 import com.intellij.ui.JBColor
@@ -295,6 +296,13 @@ class CmdlineOverlayPanel(
                                 append(value.data.actionId, SimpleTextAttributes.REGULAR_ATTRIBUTES)
                             }
                         }
+                        is SuggestionEntry.Option -> {
+                            append(value.data.name, SimpleTextAttributes.REGULAR_ATTRIBUTES)
+                            value.data.abbreviation?.let { abbrev ->
+                                append("  ", SimpleTextAttributes.GRAYED_SMALL_ATTRIBUTES)
+                                append(abbrev, SimpleTextAttributes.GRAY_ATTRIBUTES)
+                            }
+                        }
                     }
                 }
             }
@@ -341,6 +349,17 @@ class CmdlineOverlayPanel(
                 }
                 return
             }
+
+            val optionQuery = parseSetOptionQuery(content)
+            if (optionQuery != null) {
+                val suggestions = OptionCommandCompletion.suggest(optionQuery.query, maxVisibleRows)
+                if (suggestions.isEmpty()) {
+                    dispose()
+                } else {
+                    updateSuggestions(suggestions.map { SuggestionEntry.Option(it, optionQuery.prefix) })
+                }
+                return
+            }
             val suggestions = ExCommandCompletion.suggest(content, maxVisibleRows)
             if (suggestions.isEmpty()) {
                 dispose()
@@ -384,6 +403,9 @@ class CmdlineOverlayPanel(
                 }
                 is SuggestionEntry.Action -> {
                     setTextProgrammatically(textField, suggestion.prefix + suggestion.data.actionId)
+                }
+                is SuggestionEntry.Option -> {
+                    setTextProgrammatically(textField, suggestion.prefix + suggestion.data.name)
                 }
             }
             dispose()
@@ -440,6 +462,52 @@ class CmdlineOverlayPanel(
                 }
             }
             return current
+        }
+
+        private fun parseSetOptionQuery(content: String): OptionQuery? {
+            if (content.isEmpty()) {
+                return null
+            }
+
+            var index = content.indexOfFirst { !it.isWhitespace() }
+            if (index == -1) {
+                return null
+            }
+
+            if (content[index] == ':') {
+                index += 1
+                while (index < content.length && content[index].isWhitespace()) {
+                    index += 1
+                }
+                if (index >= content.length) {
+                    return null
+                }
+            }
+
+            if (!content.regionMatches(index, "set", 0, 3, ignoreCase = true)) {
+                return null
+            }
+            val afterSet = index + 3
+            if (afterSet >= content.length) {
+                return null
+            }
+
+            var cursor = afterSet
+            var sawWhitespace = false
+            while (cursor < content.length && content[cursor].isWhitespace()) {
+                cursor += 1
+                sawWhitespace = true
+            }
+            if (!sawWhitespace) {
+                return null
+            }
+            if (cursor >= content.length) {
+                return null
+            }
+
+            val prefix = content.substring(0, cursor)
+            val query = content.substring(cursor)
+            return OptionQuery(prefix, query)
         }
 
         fun updatePopupWidth(width: Int) {
@@ -502,8 +570,10 @@ class CmdlineOverlayPanel(
 }
 
 private data class ActionQuery(val prefix: String, val query: String)
+private data class OptionQuery(val prefix: String, val query: String)
 
 private sealed interface SuggestionEntry {
     data class ExCommand(val data: ExCommandCompletion.Suggestion) : SuggestionEntry
     data class Action(val data: ActionCommandCompletion.Suggestion, val prefix: String) : SuggestionEntry
+    data class Option(val data: OptionCommandCompletion.Suggestion, val prefix: String) : SuggestionEntry
 }

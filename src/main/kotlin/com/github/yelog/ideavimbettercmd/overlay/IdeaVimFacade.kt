@@ -5,6 +5,8 @@ import com.intellij.ide.IdeEventQueue
 import com.intellij.openapi.actionSystem.DataContext
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.editor.Editor
+import com.maddyhome.idea.vim.VimPlugin
+import com.maddyhome.idea.vim.options.Option
 import java.awt.event.InputEvent
 import java.awt.event.KeyEvent
 import java.lang.reflect.Method
@@ -34,6 +36,11 @@ object IdeaVimFacade {
     private val executionContextCreationCache = ConcurrentHashMap.newKeySet<Class<*>>()
     private val overlaySuppressionDeadline = AtomicLong(0)
 
+    data class OptionInfo(
+        val name: String,
+        val abbreviation: String?,
+    )
+
     fun isAvailable(): Boolean {
         return vimPluginClass != null && commandStateClass != null && vimPluginKeyMethod != null
     }
@@ -49,6 +56,42 @@ object IdeaVimFacade {
         } catch (throwable: Throwable) {
             logger.warn("Failed to query IdeaVim command state.", throwable)
             false
+        }
+    }
+
+    fun collectOptions(): List<OptionInfo> {
+        if (!isAvailable()) {
+            return emptyList()
+        }
+
+        return try {
+            val optionGroup = runCatching { VimPlugin.getOptionGroup() }.getOrNull() ?: return emptyList()
+            optionGroup.getAllOptions().mapNotNull { option: Option<*> ->
+                val optionName = safeOptionName(option) ?: return@mapNotNull null
+                val abbreviation = safeOptionAbbreviation(option)
+                OptionInfo(name = optionName, abbreviation = abbreviation)
+            }.sortedBy { it.name.lowercase() }
+        } catch (throwable: Throwable) {
+            logger.warn("Failed to collect IdeaVim option definitions.", throwable)
+            emptyList()
+        }
+    }
+
+    private fun safeOptionName(option: Option<*>?): String? {
+        return try {
+            option?.name
+        } catch (throwable: Throwable) {
+            logger.debug("Failed to read IdeaVim option name.", throwable)
+            null
+        }
+    }
+
+    private fun safeOptionAbbreviation(option: Option<*>?): String? {
+        return try {
+            option?.abbrev?.takeIf { it.isNotBlank() }
+        } catch (throwable: Throwable) {
+            logger.debug("Failed to read IdeaVim option abbreviation.", throwable)
+            null
         }
     }
 
