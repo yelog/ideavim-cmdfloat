@@ -50,8 +50,13 @@ class CmdlineOverlayKeyDispatcher(
         }
 
         val source = event.component
-        if (source != null && manager.isOverlayComponent(source)) {
-            return false
+        if (source != null) {
+            if (manager.isOverlayComponent(source)) {
+                return false
+            }
+            if (!manager.ownsComponent(source)) {
+                return false
+            }
         }
 
         val overlayMode = event.detectOverlayMode() ?: return false

@@ -7,16 +7,20 @@ import com.intellij.openapi.editor.EditorKind
 import com.intellij.openapi.editor.ex.EditorEx
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.project.Project
+import com.intellij.ide.DataManager
+import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.ui.popup.JBPopup
 import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.openapi.ui.popup.JBPopupListener
 import com.intellij.openapi.ui.popup.LightweightWindowEvent
 import com.intellij.openapi.wm.IdeFocusManager
+import com.intellij.openapi.wm.WindowManager
 import com.intellij.ui.awt.RelativePoint
 import com.intellij.util.ui.JBUI
 import java.awt.Component
 import java.awt.Dimension
 import java.awt.Point
+import javax.swing.SwingUtilities
 import kotlin.math.max
 import kotlin.math.roundToInt
 
@@ -55,6 +59,21 @@ class CmdlineOverlayManager(private val project: Project) {
     fun isOverlayComponent(component: Component): Boolean {
         val overlayRoot = overlayComponent?.component ?: return false
         return component == overlayRoot || overlayRoot.isAncestorOf(component)
+    }
+
+    fun ownsComponent(component: Component): Boolean {
+        val dataContext = DataManager.getInstance().getDataContext(component)
+        val componentProject = CommonDataKeys.PROJECT.getData(dataContext)
+        if (componentProject != null) {
+            return componentProject == project
+        }
+
+        val projectFrame = WindowManager.getInstance().getFrame(project) ?: return false
+        val window = SwingUtilities.getWindowAncestor(component) ?: return false
+        if (projectFrame == window) {
+            return true
+        }
+        return projectFrame.isAncestorOf(window)
     }
 
     private fun showOverlay(editor: Editor, mode: OverlayMode, history: CommandHistory) {
