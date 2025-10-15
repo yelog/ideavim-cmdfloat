@@ -589,9 +589,7 @@ class CmdlineOverlayPanel(
                 dispose()
                 return
             }
-            if (list.selectedIndex == -1 || list.selectedIndex >= model.size) {
-                list.selectedIndex = 0
-            }
+            list.clearSelection()
             val visibleRows = min(model.size, maxVisibleRows)
             val rowHeight = list.fixedCellHeight.takeIf { it > 0 }
                 ?: list.preferredSize.height.coerceAtLeast(JBUI.scale(20))
@@ -609,7 +607,10 @@ class CmdlineOverlayPanel(
             val popup = ensurePopup()
             popup.setSize(size)
             popup.setLocation(RelativePoint(parent, Point(0, parent.height)).screenPoint)
-            list.ensureIndexIsVisible(list.selectedIndex)
+            val selectedIndex = list.selectedIndex
+            if (selectedIndex >= 0) {
+                list.ensureIndexIsVisible(selectedIndex)
+            }
             scrollPane.revalidate()
             scrollPane.repaint()
         }
@@ -621,6 +622,9 @@ class CmdlineOverlayPanel(
             val current = list.selectedIndex
             if (current == -1) {
                 val target = if (previous) model.size - 1 else 0
+                if (target < 0) {
+                    return false
+                }
                 list.selectedIndex = target
                 list.ensureIndexIsVisible(target)
                 return true
@@ -638,9 +642,8 @@ class CmdlineOverlayPanel(
             if (!isActive()) {
                 return false
             }
-            val index = if (list.selectedIndex >= 0) list.selectedIndex else 0
+            val index = list.selectedIndex
             if (index < 0 || index >= model.size) {
-                dispose()
                 return false
             }
             val value = model.getElementAt(index)
