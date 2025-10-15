@@ -496,6 +496,7 @@ class CmdlineOverlayPanel(
             putClientProperty("JComponent.roundRect", java.lang.Boolean.TRUE)
         }
         private var selectionBaseText: String? = null
+        private var suppressSelectionEvent = false
 
         private val scrollPane = JBScrollPane(list).apply {
             isOpaque = false
@@ -523,7 +524,7 @@ class CmdlineOverlayPanel(
                 }
             })
             list.addListSelectionListener { event ->
-                if (event.valueIsAdjusting) {
+                if (event.valueIsAdjusting || suppressSelectionEvent) {
                     return@addListSelectionListener
                 }
                 val index = list.selectedIndex
@@ -544,6 +545,7 @@ class CmdlineOverlayPanel(
         }
 
         override fun onUserInput(content: String) {
+            selectionBaseText = null
             if (candidates.isEmpty()) {
                 dispose()
                 return
@@ -562,15 +564,16 @@ class CmdlineOverlayPanel(
         }
 
         private fun updateSuggestions(words: List<String>) {
-            if (list.selectedIndex != -1) {
-                list.clearSelection()
+            suppressSelection {
+                if (list.selectedIndex != -1) {
+                    list.clearSelection()
+                }
+                model.replaceAll(words)
             }
-            model.replaceAll(words)
             if (model.isEmpty) {
                 dispose()
                 return
             }
-            list.clearSelection()
             val visibleRows = min(model.size, maxVisibleRows)
             val rowHeight = list.fixedCellHeight.takeIf { it > 0 }
                 ?: list.preferredSize.height.coerceAtLeast(JBUI.scale(20))
@@ -664,9 +667,12 @@ class CmdlineOverlayPanel(
         }
 
         override fun dispose() {
-            popup?.cancel()
-            popup = null
-            model.replaceAll(emptyList())
+            suppressSelection {
+                popup?.cancel()
+                popup = null
+                model.replaceAll(emptyList())
+                list.clearSelection()
+            }
             selectionBaseText = null
         }
 
@@ -699,6 +705,19 @@ class CmdlineOverlayPanel(
             selectionBaseText = null
             if (textField.text != base) {
                 setTextProgrammatically(textField, base)
+            }
+        }
+
+        private inline fun suppressSelection(block: () -> Unit) {
+            if (suppressSelectionEvent) {
+                block()
+                return
+            }
+            suppressSelectionEvent = true
+            try {
+                block()
+            } finally {
+                suppressSelectionEvent = false
             }
         }
     }
@@ -756,6 +775,7 @@ class CmdlineOverlayPanel(
             }
         }
         private var selectionBaseText: String? = null
+        private var suppressSelectionEvent = false
 
         private val scrollPane = JBScrollPane(list).apply {
             isOpaque = false
@@ -783,7 +803,7 @@ class CmdlineOverlayPanel(
                 }
             })
             list.addListSelectionListener { event ->
-                if (event.valueIsAdjusting) {
+                if (event.valueIsAdjusting || suppressSelectionEvent) {
                     return@addListSelectionListener
                 }
                 val index = list.selectedIndex
@@ -896,16 +916,18 @@ class CmdlineOverlayPanel(
         }
 
         private fun updateSuggestions(suggestions: List<SuggestionEntry>) {
-            if (list.selectedIndex != -1) {
-                list.clearSelection()
+            suppressSelection {
+                if (list.selectedIndex != -1) {
+                    list.clearSelection()
+                }
+                model.replaceAll(suggestions)
+                if (model.isEmpty) {
+                    list.clearSelection()
+                }
             }
-            model.replaceAll(suggestions)
             if (model.isEmpty) {
                 dispose()
                 return
-            }
-            if (list.selectedIndex >= model.size) {
-                list.clearSelection()
             }
             val visibleRows = min(model.size, maxVisibleRows)
             val rowHeight = list.fixedCellHeight.takeIf { it > 0 } ?: list.preferredSize.height.coerceAtLeast(JBUI.scale(20))
@@ -955,6 +977,16 @@ class CmdlineOverlayPanel(
                 }
             }
             return current
+        }
+
+        override fun dispose() {
+            suppressSelection {
+                popup?.cancel()
+                popup = null
+                model.replaceAll(emptyList())
+                list.clearSelection()
+            }
+            selectionBaseText = null
         }
 
         private fun parseSubstitutionSearchQuery(content: String): SubstitutionQuery? {
@@ -1060,6 +1092,19 @@ class CmdlineOverlayPanel(
             }
         }
 
+        private inline fun suppressSelection(block: () -> Unit) {
+            if (suppressSelectionEvent) {
+                block()
+                return
+            }
+            suppressSelectionEvent = true
+            try {
+                block()
+            } finally {
+                suppressSelectionEvent = false
+            }
+        }
+
         private fun parseSetOptionQuery(content: String): OptionQuery? {
             if (content.isEmpty()) {
                 return null
@@ -1119,13 +1164,6 @@ class CmdlineOverlayPanel(
             parentComponent?.let {
                 popup.setLocation(RelativePoint(it, Point(0, it.height)).screenPoint)
             }
-        }
-
-        override fun dispose() {
-            popup?.cancel()
-            popup = null
-            model.replaceAll(emptyList())
-            selectionBaseText = null
         }
 
         private fun parseActionQuery(content: String): ActionQuery? {
