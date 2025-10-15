@@ -247,7 +247,7 @@ class CmdlineOverlayPanel(
 
     private fun applyHistoryValue(value: String, textField: JBTextField) {
         setTextProgrammatically(textField, value)
-        suggestionSupport?.clear()
+        suggestionSupport?.dispose()
     }
 
     private fun EditorColorsScheme.toOverlayInputBackground(): JBColor {
@@ -262,7 +262,7 @@ class CmdlineOverlayPanel(
         private val textField: JBTextField,
         private val scheme: EditorColorsScheme,
     ) {
-        private val model = CollectionListModel<ExCommandCompletion.Suggestion>()
+        private val model = CollectionListModel<SuggestionEntry>()
         private val list = JBList(model).apply {
             selectionMode = ListSelectionModel.SINGLE_SELECTION
             fixedCellHeight = JBUI.scale(20)
@@ -270,10 +270,10 @@ class CmdlineOverlayPanel(
             background = textField.background
             foreground = textField.foreground
             putClientProperty("JComponent.roundRect", java.lang.Boolean.TRUE)
-            cellRenderer = object : ColoredListCellRenderer<ExCommandCompletion.Suggestion>() {
+            cellRenderer = object : ColoredListCellRenderer<SuggestionEntry>() {
                 override fun customizeCellRenderer(
-                    list: JList<out ExCommandCompletion.Suggestion>,
-                    value: ExCommandCompletion.Suggestion?,
+                    list: JList<out SuggestionEntry>,
+                    value: SuggestionEntry?,
                     index: Int,
                     selected: Boolean,
                     hasFocus: Boolean,
@@ -281,7 +281,21 @@ class CmdlineOverlayPanel(
                     if (value == null) {
                         return
                     }
-                    append(value.displayText, SimpleTextAttributes.REGULAR_ATTRIBUTES)
+                    when (value) {
+                        is SuggestionEntry.ExCommand -> {
+                            append(value.data.displayText, SimpleTextAttributes.REGULAR_ATTRIBUTES)
+                        }
+                        is SuggestionEntry.Action -> {
+                            val presentation = value.data.presentation
+                            if (!presentation.isNullOrBlank()) {
+                                append(presentation, SimpleTextAttributes.REGULAR_ATTRIBUTES)
+                                append("  ", SimpleTextAttributes.GRAYED_SMALL_ATTRIBUTES)
+                                append(value.data.actionId, SimpleTextAttributes.GRAY_ATTRIBUTES)
+                            } else {
+                                append(value.data.actionId, SimpleTextAttributes.REGULAR_ATTRIBUTES)
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -317,8 +331,22 @@ class CmdlineOverlayPanel(
         }
 
         fun onUserInput(content: String) {
+            val actionQuery = parseActionQuery(content)
+            if (actionQuery != null) {
+                val suggestions = ActionCommandCompletion.suggest(actionQuery.query, maxVisibleRows)
+                if (suggestions.isEmpty()) {
+                    dispose()
+                } else {
+                    updateSuggestions(suggestions.map { SuggestionEntry.Action(it, actionQuery.prefix) })
+                }
+                return
+            }
             val suggestions = ExCommandCompletion.suggest(content, maxVisibleRows)
-            updateSuggestions(suggestions)
+            if (suggestions.isEmpty()) {
+                dispose()
+            } else {
+                updateSuggestions(suggestions.map { SuggestionEntry.ExCommand(it) })
+            }
         }
 
         fun moveSelection(previous: Boolean): Boolean {
@@ -347,23 +375,22 @@ class CmdlineOverlayPanel(
             }
             val index = if (list.selectedIndex >= 0) list.selectedIndex else 0
             if (index < 0 || index >= model.size) {
-                clear()
+                dispose()
                 return false
             }
-            val suggestion = model.getElementAt(index)
-            setTextProgrammatically(textField, suggestion.executionText)
-            clear()
+            when (val suggestion = model.getElementAt(index)) {
+                is SuggestionEntry.ExCommand -> {
+                    setTextProgrammatically(textField, suggestion.data.executionText)
+                }
+                is SuggestionEntry.Action -> {
+                    setTextProgrammatically(textField, suggestion.prefix + suggestion.data.actionId)
+                }
+            }
+            dispose()
             return true
         }
 
-        fun clear() = dispose()
-
-        private fun updateSuggestions(suggestions: List<ExCommandCompletion.Suggestion>) {
-            if (suggestions.isEmpty()) {
-                dispose()
-                return
-            }
-
+        private fun updateSuggestions(suggestions: List<SuggestionEntry>) {
             model.replaceAll(suggestions)
             if (list.selectedIndex == -1 || list.selectedIndex >= model.size) {
                 list.selectedIndex = 0
@@ -436,6 +463,28 @@ class CmdlineOverlayPanel(
             model.replaceAll(emptyList())
             list.clearSelection()
         }
+
+        private fun parseActionQuery(content: String): ActionQuery? {
+            val firstNonSpace = content.indexOfFirst { !it.isWhitespace() }
+            if (firstNonSpace == -1) {
+                return null
+            }
+            val leading = content.substring(0, firstNonSpace)
+            val remainder = content.substring(firstNonSpace)
+
+            val patterns = listOf(":action ", "action ")
+            for (pattern in patterns) {
+                if (remainder.regionMatches(0, pattern, 0, pattern.length, ignoreCase = true)) {
+                    val prefix = leading + remainder.substring(0, pattern.length)
+                    val query = remainder.substring(pattern.length).trimStart()
+                    if (query.isEmpty()) {
+                        return null
+                    }
+                    return ActionQuery(prefix, query)
+                }
+            }
+            return null
+        }
     }
 
     companion object {
@@ -450,4 +499,11 @@ class CmdlineOverlayPanel(
         textField.caretPosition = value.length
         programmaticUpdate = false
     }
+}
+
+private data class ActionQuery(val prefix: String, val query: String)
+
+private sealed interface SuggestionEntry {
+    data class ExCommand(val data: ExCommandCompletion.Suggestion) : SuggestionEntry
+    data class Action(val data: ActionCommandCompletion.Suggestion, val prefix: String) : SuggestionEntry
 }
