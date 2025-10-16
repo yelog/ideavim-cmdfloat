@@ -486,7 +486,7 @@ class CmdlineOverlayPanel(
         private val scheme: EditorColorsScheme,
         private val candidates: List<String>,
     ) : SuggestionSupport {
-        private val model = CollectionListModel<String>()
+        private val model = CollectionListModel<SearchMatchCandidate>()
         private val list = JBList(model).apply {
             selectionMode = ListSelectionModel.SINGLE_SELECTION
             fixedCellHeight = JBUI.scale(20)
@@ -494,9 +494,31 @@ class CmdlineOverlayPanel(
             background = textField.background
             foreground = textField.foreground
             putClientProperty("JComponent.roundRect", java.lang.Boolean.TRUE)
+            cellRenderer = object : ColoredListCellRenderer<SearchMatchCandidate>() {
+                override fun customizeCellRenderer(
+                    list: JList<out SearchMatchCandidate>,
+                    value: SearchMatchCandidate?,
+                    index: Int,
+                    selected: Boolean,
+                    hasFocus: Boolean,
+                ) {
+                    if (value == null) {
+                        return
+                    }
+                    appendWithHighlights(
+                        text = value.word,
+                        highlightIndices = value.positions,
+                        normalAttrs = SimpleTextAttributes.REGULAR_ATTRIBUTES,
+                        highlightAttrs = SEARCH_HIGHLIGHT_ATTRIBUTES,
+                    )
+                }
+            }
         }
         private var selectionBaseText: String? = null
         private var suppressSelectionEvent = false
+        private var currentActionQuery: ActionQuery? = null
+        private var currentOptionQuery: OptionQuery? = null
+        private var currentExQuery: String = ""
 
         private val scrollPane = JBScrollPane(list).apply {
             isOpaque = false
@@ -533,7 +555,7 @@ class CmdlineOverlayPanel(
                         selectionBaseText = textField.text
                     }
                     val value = model.getElementAt(index)
-                    setTextProgrammatically(textField, value)
+                    setTextProgrammatically(textField, value.word)
                 } else {
                     restoreSelectionBase()
                 }
@@ -559,16 +581,16 @@ class CmdlineOverlayPanel(
             if (matches.isEmpty()) {
                 dispose()
             } else {
-                updateSuggestions(matches.map { it.word })
+                updateSuggestions(matches)
             }
         }
 
-        private fun updateSuggestions(words: List<String>) {
+        private fun updateSuggestions(matches: List<SearchMatchCandidate>) {
             suppressSelection {
                 if (list.selectedIndex != -1) {
                     list.clearSelection()
                 }
-                model.replaceAll(words)
+                model.replaceAll(matches)
             }
             if (model.isEmpty) {
                 dispose()
@@ -646,7 +668,7 @@ class CmdlineOverlayPanel(
                 return false
             }
             val value = model.getElementAt(index)
-            setTextProgrammatically(textField, value)
+            setTextProgrammatically(textField, value.word)
             dispose()
             return true
         }
@@ -746,28 +768,80 @@ class CmdlineOverlayPanel(
                     if (value == null) {
                         return
                     }
+                    val highlightAttrs = SEARCH_HIGHLIGHT_ATTRIBUTES
+                    val actionQueryText = this@CommandSuggestionSupport.currentActionQuery?.query
+                    val optionQueryText = this@CommandSuggestionSupport.currentOptionQuery?.query
+                    val exQueryText = this@CommandSuggestionSupport.currentExQuery
                     when (value) {
                         is SuggestionEntry.ExCommand -> {
-                            append(value.data.displayText, SimpleTextAttributes.REGULAR_ATTRIBUTES)
+                            val display = value.data.displayText
+                            if (display.isNotBlank()) {
+                                appendWithHighlights(
+                                    text = display,
+                                    highlightIndices = highlightIndicesForSubstring(display, exQueryText),
+                                    normalAttrs = SimpleTextAttributes.REGULAR_ATTRIBUTES,
+                                    highlightAttrs = highlightAttrs,
+                                )
+                            } else {
+                                val execution = value.data.executionText
+                                appendWithHighlights(
+                                    text = execution,
+                                    highlightIndices = highlightIndicesForSubstring(execution, exQueryText),
+                                    normalAttrs = SimpleTextAttributes.REGULAR_ATTRIBUTES,
+                                    highlightAttrs = highlightAttrs,
+                                )
+                            }
                         }
                         is SuggestionEntry.SearchWord -> {
-                            append(value.word, SimpleTextAttributes.REGULAR_ATTRIBUTES)
+                            appendWithHighlights(
+                                text = value.match.word,
+                                highlightIndices = value.match.positions,
+                                normalAttrs = SimpleTextAttributes.REGULAR_ATTRIBUTES,
+                                highlightAttrs = highlightAttrs,
+                            )
                         }
                         is SuggestionEntry.Action -> {
+                            val highlightQuery = actionQueryText
                             val presentation = value.data.presentation
                             if (!presentation.isNullOrBlank()) {
-                                append(presentation, SimpleTextAttributes.REGULAR_ATTRIBUTES)
+                                appendWithHighlights(
+                                    text = presentation,
+                                    highlightIndices = highlightIndicesForSubstring(presentation, highlightQuery),
+                                    normalAttrs = SimpleTextAttributes.REGULAR_ATTRIBUTES,
+                                    highlightAttrs = highlightAttrs,
+                                )
                                 append("  ", SimpleTextAttributes.GRAYED_SMALL_ATTRIBUTES)
-                                append(value.data.actionId, SimpleTextAttributes.GRAY_ATTRIBUTES)
+                                appendWithHighlights(
+                                    text = value.data.actionId,
+                                    highlightIndices = highlightIndicesForSubstring(value.data.actionId, highlightQuery),
+                                    normalAttrs = SimpleTextAttributes.GRAY_ATTRIBUTES,
+                                    highlightAttrs = highlightAttrs,
+                                )
                             } else {
-                                append(value.data.actionId, SimpleTextAttributes.REGULAR_ATTRIBUTES)
+                                appendWithHighlights(
+                                    text = value.data.actionId,
+                                    highlightIndices = highlightIndicesForSubstring(value.data.actionId, highlightQuery),
+                                    normalAttrs = SimpleTextAttributes.REGULAR_ATTRIBUTES,
+                                    highlightAttrs = highlightAttrs,
+                                )
                             }
                         }
                         is SuggestionEntry.Option -> {
-                            append(value.data.name, SimpleTextAttributes.REGULAR_ATTRIBUTES)
+                            val highlightQuery = optionQueryText
+                            appendWithHighlights(
+                                text = value.data.name,
+                                highlightIndices = highlightIndicesForSubstring(value.data.name, highlightQuery),
+                                normalAttrs = SimpleTextAttributes.REGULAR_ATTRIBUTES,
+                                highlightAttrs = highlightAttrs,
+                            )
                             value.data.abbreviation?.let { abbrev ->
                                 append("  ", SimpleTextAttributes.GRAYED_SMALL_ATTRIBUTES)
-                                append(abbrev, SimpleTextAttributes.GRAY_ATTRIBUTES)
+                                appendWithHighlights(
+                                    text = abbrev,
+                                    highlightIndices = highlightIndicesForSubstring(abbrev, highlightQuery),
+                                    normalAttrs = SimpleTextAttributes.GRAY_ATTRIBUTES,
+                                    highlightAttrs = highlightAttrs,
+                                )
                             }
                         }
                     }
@@ -776,6 +850,9 @@ class CmdlineOverlayPanel(
         }
         private var selectionBaseText: String? = null
         private var suppressSelectionEvent = false
+        private var currentActionQuery: ActionQuery? = null
+        private var currentOptionQuery: OptionQuery? = null
+        private var currentExQuery: String = ""
 
         private val scrollPane = JBScrollPane(list).apply {
             isOpaque = false
@@ -824,13 +901,16 @@ class CmdlineOverlayPanel(
 
         override fun onUserInput(content: String) {
             selectionBaseText = null
+            currentActionQuery = null
+            currentOptionQuery = null
+            currentExQuery = ""
             val substitutionQuery = parseSubstitutionSearchQuery(content)
             if (substitutionQuery != null && searchCandidates.isNotEmpty()) {
                 val matches = matchSearchCandidates(searchCandidates, substitutionQuery.query, maxSearchSuggestions)
                 if (matches.isEmpty()) {
                     dispose()
                 } else {
-                    updateSuggestions(matches.map { SuggestionEntry.SearchWord(it.word, substitutionQuery) })
+                    updateSuggestions(matches.map { SuggestionEntry.SearchWord(it, substitutionQuery) })
                 }
                 return
             }
@@ -841,6 +921,7 @@ class CmdlineOverlayPanel(
                 if (suggestions.isEmpty()) {
                     dispose()
                 } else {
+                    currentActionQuery = actionQuery
                     updateSuggestions(suggestions.map { SuggestionEntry.Action(it, actionQuery.prefix) })
                 }
                 return
@@ -852,6 +933,7 @@ class CmdlineOverlayPanel(
                 if (suggestions.isEmpty()) {
                     dispose()
                 } else {
+                    currentOptionQuery = optionQuery
                     updateSuggestions(suggestions.map { SuggestionEntry.Option(it, optionQuery.prefix) })
                 }
                 return
@@ -860,6 +942,7 @@ class CmdlineOverlayPanel(
             if (suggestions.isEmpty()) {
                 dispose()
             } else {
+                currentExQuery = extractCommandHighlight(content)
                 updateSuggestions(suggestions.map { SuggestionEntry.ExCommand(it) })
             }
         }
@@ -1069,7 +1152,7 @@ class CmdlineOverlayPanel(
         private fun applySelection(index: Int) {
             when (val suggestion = model.getElementAt(index)) {
                 is SuggestionEntry.SearchWord -> {
-                    val newValue = suggestion.context.prefix + suggestion.word + suggestion.context.suffix
+                    val newValue = suggestion.context.prefix + suggestion.match.word + suggestion.context.suffix
                     setTextProgrammatically(textField, newValue)
                 }
                 is SuggestionEntry.ExCommand -> {
@@ -1205,6 +1288,11 @@ class CmdlineOverlayPanel(
     }
 }
 
+private val SEARCH_HIGHLIGHT_ATTRIBUTES = SimpleTextAttributes(
+    SimpleTextAttributes.STYLE_BOLD,
+    JBColor.namedColor("BetterCmd.Highlight.foreground", JBColor(0x0F7AF5, 0x62AFFF)),
+)
+
 private val searchMatchComparator = compareByDescending<SearchMatchCandidate> { it.maxConsecutive }
     .thenBy { it.firstIndex }
     .thenBy { it.span }
@@ -1234,20 +1322,21 @@ private fun computeSearchMatch(normalizedQuery: String, candidate: String): Sear
         return null
     }
     val candidateLower = candidate.lowercase(Locale.ROOT)
-    val positions = mutableListOf<Int>()
+    val positionsList = mutableListOf<Int>()
     var queryIndex = 0
     for (index in candidateLower.indices) {
         if (candidateLower[index] == normalizedQuery[queryIndex]) {
-            positions.add(index)
+            positionsList.add(index)
             queryIndex += 1
             if (queryIndex == normalizedQuery.length) {
                 break
             }
         }
     }
-    if (queryIndex != normalizedQuery.length || positions.isEmpty()) {
+    if (queryIndex != normalizedQuery.length || positionsList.isEmpty()) {
         return null
     }
+    val positions = positionsList.toIntArray()
     var maxStreak = 1
     var currentStreak = 1
     var sumIndices = positions.first()
@@ -1265,7 +1354,7 @@ private fun computeSearchMatch(normalizedQuery: String, candidate: String): Sear
         }
     }
     val span = positions.last() - positions.first()
-    return SearchMatchCandidate(candidate, maxStreak, positions.first(), span, sumIndices)
+    return SearchMatchCandidate(candidate, maxStreak, positions.first(), span, sumIndices, positions)
 }
 
 private data class SubstitutionQuery(
@@ -1280,13 +1369,67 @@ private data class SearchMatchCandidate(
     val firstIndex: Int,
     val span: Int,
     val sumIndices: Int,
+    val positions: IntArray,
 )
+
+private fun ColoredListCellRenderer<*>.appendWithHighlights(
+    text: String,
+    highlightIndices: IntArray,
+    normalAttrs: SimpleTextAttributes,
+    highlightAttrs: SimpleTextAttributes,
+) {
+    if (highlightIndices.isEmpty()) {
+        append(text, normalAttrs)
+        return
+    }
+    var cursor = 0
+    var pointer = 0
+    while (cursor < text.length) {
+        if (pointer < highlightIndices.size && highlightIndices[pointer] == cursor) {
+            var end = cursor
+            while (pointer < highlightIndices.size && highlightIndices[pointer] == end) {
+                end += 1
+                pointer += 1
+            }
+            append(text.substring(cursor, end), highlightAttrs)
+            cursor = end
+        } else {
+            val start = cursor
+            while (cursor < text.length && (pointer >= highlightIndices.size || highlightIndices[pointer] != cursor)) {
+                cursor += 1
+            }
+            if (cursor > start) {
+                append(text.substring(start, cursor), normalAttrs)
+            }
+        }
+    }
+}
+
+private fun highlightIndicesForSubstring(text: String, query: String?): IntArray {
+    val trimmed = query?.trim() ?: return IntArray(0)
+    if (trimmed.isEmpty()) {
+        return IntArray(0)
+    }
+    val lowerText = text.lowercase(Locale.ROOT)
+    val lowerQuery = trimmed.lowercase(Locale.ROOT)
+    val index = lowerText.indexOf(lowerQuery)
+    if (index == -1) {
+        return IntArray(0)
+    }
+    return IntArray(lowerQuery.length) { offset -> index + offset }
+}
+
+private fun extractCommandHighlight(content: String): String {
+    val trimmed = content.trimStart()
+    val withoutColon = if (trimmed.startsWith(":")) trimmed.substring(1) else trimmed
+    return withoutColon.trimStart()
+}
 
 private data class ActionQuery(val prefix: String, val query: String)
 private data class OptionQuery(val prefix: String, val query: String)
 
 private sealed interface SuggestionEntry {
-    data class SearchWord(val word: String, val context: SubstitutionQuery) : SuggestionEntry
+    data class SearchWord(val match: SearchMatchCandidate, val context: SubstitutionQuery) : SuggestionEntry
     data class ExCommand(val data: ExCommandCompletion.Suggestion) : SuggestionEntry
     data class Action(val data: ActionCommandCompletion.Suggestion, val prefix: String) : SuggestionEntry
     data class Option(val data: OptionCommandCompletion.Suggestion, val prefix: String) : SuggestionEntry
