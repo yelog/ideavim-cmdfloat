@@ -33,6 +33,7 @@ import javax.swing.JList
 import javax.swing.ListSelectionModel
 import javax.swing.InputMap
 import javax.swing.KeyStroke
+import javax.swing.SwingConstants
 import javax.swing.event.DocumentEvent
 import javax.swing.event.DocumentListener
 import javax.swing.border.TitledBorder
@@ -69,10 +70,12 @@ class CmdlineOverlayPanel(
     private var searchCancelled = false
     private var searchInitialCaretOffset: Int = -1
     private var commandPreviewActive = false
+    private val searchResultLabel: JBLabel?
 
     init {
         val scheme = EditorColorsManager.getInstance().globalScheme
         focusComponent = createTextField(scheme)
+        searchResultLabel = if (isSearchMode()) createSearchResultLabel() else null
         suggestionSupport = when (mode) {
             OverlayMode.COMMAND -> CommandSuggestionSupport(focusComponent, scheme, searchCandidates)
             OverlayMode.SEARCH_FORWARD, OverlayMode.SEARCH_BACKWARD -> SearchSuggestionSupport(
@@ -86,7 +89,14 @@ class CmdlineOverlayPanel(
             isOpaque = false
             border = JBUI.Borders.empty(2, 0, 2, 0)
             add(createPrefixLabel(), java.awt.BorderLayout.WEST)
-            add(focusComponent, java.awt.BorderLayout.CENTER)
+            add(
+                JBPanel<JBPanel<*>>(java.awt.BorderLayout()).apply {
+                    isOpaque = false
+                    add(focusComponent, java.awt.BorderLayout.CENTER)
+                    searchResultLabel?.let { add(it, java.awt.BorderLayout.EAST) }
+                },
+                java.awt.BorderLayout.CENTER,
+            )
         }
 
         val contentPanel = JBPanel<JBPanel<*>>(java.awt.BorderLayout()).apply {
@@ -128,6 +138,9 @@ class CmdlineOverlayPanel(
         applyPreferredSize()
 
         installActions(focusComponent)
+        if (isSearchMode()) {
+            updateSearchResultIndicator(focusComponent.text)
+        }
 
         if (mode == OverlayMode.COMMAND && historySnapshot.isNotEmpty() && historySnapshot.firstOrNull()?.startsWith("<,'>") == true) {
             // no-op
@@ -179,6 +192,9 @@ class CmdlineOverlayPanel(
         }
         historyIndex = -1
         suggestionSupport?.onUserInput(textField.text)
+        if (isSearchMode()) {
+            updateSearchResultIndicator(textField.text)
+        }
         triggerSearchPreview(textField.text)
         if (mode == OverlayMode.COMMAND) {
             updateCommandPatternPreview(textField.text)
@@ -203,6 +219,19 @@ class CmdlineOverlayPanel(
                 override fun removeUpdate(event: DocumentEvent) = handleDocumentChange(this@apply)
                 override fun changedUpdate(event: DocumentEvent) = handleDocumentChange(this@apply)
             })
+        }
+    }
+
+    private fun createSearchResultLabel(): JBLabel {
+        val inputHeight = JBUI.scale(28)
+        return JBLabel(NO_RESULTS_TEXT, SwingConstants.RIGHT).apply {
+            border = JBUI.Borders.empty(0, 8, 0, 4)
+            isOpaque = false
+            foreground = SEARCH_RESULT_NEUTRAL_COLOR
+            font = JBFont.label().deriveFont(Font.BOLD, JBUI.scale(12f))
+            preferredSize = Dimension(JBUI.scale(80), inputHeight)
+            minimumSize = Dimension(JBUI.scale(60), inputHeight)
+            maximumSize = Dimension(JBUI.scale(120), inputHeight)
         }
     }
 
@@ -324,6 +353,126 @@ class CmdlineOverlayPanel(
         }
     }
 
+    private fun updateSearchResultIndicator(query: String) {
+        val label = searchResultLabel ?: return
+        if (query.isEmpty()) {
+            label.foreground = SEARCH_RESULT_NEUTRAL_COLOR
+            label.text = NO_RESULTS_TEXT
+            return
+        }
+        val stats = computeSearchResultStats(query)
+        if (stats == null || stats.total == 0) {
+            label.foreground = SEARCH_RESULT_EMPTY_COLOR
+            label.text = NO_RESULTS_TEXT
+        } else {
+            label.foreground = SEARCH_RESULT_ACTIVE_COLOR
+            label.text = "[${stats.currentIndex}/${stats.total}]"
+        }
+    }
+
+    private fun computeSearchResultStats(query: String): SearchResultStats? {
+        if (!isSearchMode()) {
+            return null
+        }
+        val normalized = normalizeSearchPattern(query)
+        val pattern = normalized.pattern
+        if (pattern.isEmpty()) {
+            return null
+        }
+        val ignoreCase = resolveSearchIgnoreCase(normalized)
+        val matches = findMatchOffsets(pattern, ignoreCase)
+        if (matches.isEmpty()) {
+            return null
+        }
+        val baseOffset = if (searchInitialCaretOffset >= 0) {
+            searchInitialCaretOffset
+        } else {
+            editor.caretModel.primaryCaret.offset
+        }
+        val currentOffset = if (mode == OverlayMode.SEARCH_BACKWARD) {
+            matches.lastOrNull { it <= baseOffset } ?: matches.last()
+        } else {
+            matches.firstOrNull { it >= baseOffset } ?: matches.first()
+        }
+        val currentIndex = matches.indexOf(currentOffset).takeIf { it >= 0 } ?: 0
+        return SearchResultStats(currentIndex + 1, matches.size)
+    }
+
+    private fun normalizeSearchPattern(raw: String): NormalizedPattern {
+        var overrideIgnoreCase: Boolean? = null
+        val builder = StringBuilder(raw.length)
+        var index = 0
+        while (index < raw.length) {
+            val ch = raw[index]
+            if (ch == '\\' && index + 1 < raw.length) {
+                val next = raw[index + 1]
+                if (next == 'c' || next == 'C') {
+                    overrideIgnoreCase = (next == 'c')
+                    index += 2
+                    continue
+                }
+            }
+            builder.append(ch)
+            index += 1
+        }
+        val normalized = builder.toString()
+        val hasUppercase = normalized.any { it.isLetter() && it.isUpperCase() }
+        return NormalizedPattern(normalized, overrideIgnoreCase, hasUppercase)
+    }
+
+    private fun resolveSearchIgnoreCase(pattern: NormalizedPattern): Boolean {
+        pattern.overrideIgnoreCase?.let { return it }
+        val ignoreCase = IdeaVimFacade.isIgnoreCaseEnabled() ?: false
+        if (!ignoreCase) {
+            return false
+        }
+        val smartCase = IdeaVimFacade.isSmartCaseEnabled() ?: false
+        if (smartCase && pattern.hasUppercase) {
+            return false
+        }
+        return true
+    }
+
+    private fun findMatchOffsets(pattern: String, ignoreCase: Boolean): List<Int> {
+        if (pattern.isEmpty()) {
+            return emptyList()
+        }
+        val documentText = editor.document.text
+        if (documentText.isEmpty()) {
+            return emptyList()
+        }
+        val regexOptions = buildSet {
+            add(RegexOption.MULTILINE)
+            if (ignoreCase) {
+                add(RegexOption.IGNORE_CASE)
+            }
+        }
+        val regex = runCatching { Regex(pattern, regexOptions) }.getOrNull()
+        return if (regex != null) {
+            regex.findAll(documentText).map { it.range.first }.toList()
+        } else {
+            findLiteralOffsets(documentText, pattern, ignoreCase)
+        }
+    }
+
+    private fun findLiteralOffsets(text: String, pattern: String, ignoreCase: Boolean): List<Int> {
+        if (pattern.isEmpty()) {
+            return emptyList()
+        }
+        val result = mutableListOf<Int>()
+        var index = 0
+        val step = pattern.length.coerceAtLeast(1)
+        while (index <= text.length) {
+            val found = text.indexOf(pattern, index, ignoreCase)
+            if (found < 0) {
+                break
+            }
+            result.add(found)
+            index = found + step
+        }
+        return result
+    }
+
     private fun EditorColorsScheme.toOverlayInputBackground(): JBColor {
         return JBColor.namedColor("TextField.background", JBColor(0xFFFFFF, 0x3B3F45))
     }
@@ -341,6 +490,9 @@ class CmdlineOverlayPanel(
 
     fun setSearchInitialCaretOffset(offset: Int) {
         searchInitialCaretOffset = offset
+        if (isSearchMode()) {
+            updateSearchResultIndicator(focusComponent.text)
+        }
     }
 
     fun getSearchInitialCaretOffset(): Int = searchInitialCaretOffset
@@ -1285,13 +1437,32 @@ class CmdlineOverlayPanel(
         textField.text = value
         textField.caretPosition = value.length
         programmaticUpdate = false
+        if (isSearchMode()) {
+            updateSearchResultIndicator(value)
+        }
     }
+
+    private data class SearchResultStats(
+        val currentIndex: Int,
+        val total: Int,
+    )
+
+    private data class NormalizedPattern(
+        val pattern: String,
+        val overrideIgnoreCase: Boolean?,
+        val hasUppercase: Boolean,
+    )
 }
 
 private val SEARCH_HIGHLIGHT_ATTRIBUTES = SimpleTextAttributes(
     SimpleTextAttributes.STYLE_BOLD,
     JBColor.namedColor("BetterCmd.Highlight.foreground", JBColor(0x0F7AF5, 0x62AFFF)),
 )
+
+private val SEARCH_RESULT_NEUTRAL_COLOR = JBColor.namedColor("Label.infoForeground", JBColor(0x9397A1, 0x6D737D))
+private val SEARCH_RESULT_ACTIVE_COLOR = JBColor.namedColor("Link.activeForeground", JBColor(0x0A84FF, 0x4C8DFF))
+private val SEARCH_RESULT_EMPTY_COLOR = JBColor.namedColor("Label.errorForeground", JBColor(0xE5484D, 0xFF6A6A))
+private const val NO_RESULTS_TEXT = "0 results"
 
 private val searchMatchComparator = compareByDescending<SearchMatchCandidate> { it.maxConsecutive }
     .thenBy { it.firstIndex }

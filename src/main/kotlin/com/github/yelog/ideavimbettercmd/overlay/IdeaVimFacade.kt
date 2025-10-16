@@ -167,6 +167,10 @@ object IdeaVimFacade {
         }
     }
 
+    fun isIgnoreCaseEnabled(): Boolean? = readBooleanOption("ignorecase")
+
+    fun isSmartCaseEnabled(): Boolean? = readBooleanOption("smartcase")
+
     fun previewSearch(editor: Editor, mode: OverlayMode, query: String, initialOffset: Int) {
         if (!isAvailable()) {
             return
@@ -255,6 +259,74 @@ object IdeaVimFacade {
             logger.debug("Failed to read IdeaVim option abbreviation.", throwable)
             null
         }
+    }
+
+    private fun readBooleanOption(optionName: String): Boolean? {
+        if (!isAvailable()) {
+            return null
+        }
+        return try {
+            val optionGroup = runCatching { VimPlugin.getOptionGroup() }.getOrNull() ?: return null
+            val optionInstance = getOptionFromGroup(optionGroup, optionName) ?: return null
+            val rawValue = extractOptionValue(optionInstance) ?: return null
+            when (rawValue) {
+                is Boolean -> rawValue
+                is Number -> rawValue.toInt() != 0
+                is String -> rawValue.equals("true", ignoreCase = true) || rawValue == "1"
+                else -> null
+            }
+        } catch (throwable: Throwable) {
+            logger.debug("Failed to read IdeaVim option $optionName", throwable)
+            null
+        }
+    }
+
+    private fun getOptionFromGroup(optionGroup: Any, optionName: String): Any? {
+        val methods = optionGroup.javaClass.methods
+        val candidate = methods.firstOrNull { method ->
+            method.parameterCount == 1 &&
+                method.parameterTypes[0] == String::class.java &&
+                (method.name == "getOption" || method.name == "getOptionValue")
+        } ?: return null
+        return try {
+            if (!candidate.canAccess(optionGroup)) {
+                candidate.isAccessible = true
+            }
+            candidate.invoke(optionGroup, optionName)
+        } catch (throwable: Throwable) {
+            logger.debug("Failed to access option $optionName from IdeaVim option group.", throwable)
+            null
+        }
+    }
+
+    private fun extractOptionValue(option: Any): Any? {
+        val optionClass = option.javaClass
+        val methods = optionClass.methods.filter { it.parameterCount == 0 }
+        val valueMethod = methods.firstOrNull { method -> method.name == "getValue" || method.name == "value" }
+        if (valueMethod != null) {
+            return try {
+                if (!valueMethod.canAccess(option)) {
+                    valueMethod.isAccessible = true
+                }
+                valueMethod.invoke(option)
+            } catch (throwable: Throwable) {
+                logger.debug("Failed to invoke IdeaVim option value accessor on ${optionClass.name}", throwable)
+                null
+            }
+        }
+        val isSetMethod = methods.firstOrNull { it.name == "isSet" }
+        if (isSetMethod != null) {
+            return try {
+                if (!isSetMethod.canAccess(option)) {
+                    isSetMethod.isAccessible = true
+                }
+                isSetMethod.invoke(option)
+            } catch (throwable: Throwable) {
+                logger.debug("Failed to invoke IdeaVim option isSet accessor on ${optionClass.name}", throwable)
+                null
+            }
+        }
+        return null
     }
 
     fun replay(editor: Editor, mode: OverlayMode, payload: String) {
