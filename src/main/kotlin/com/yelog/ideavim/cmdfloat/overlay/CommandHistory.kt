@@ -17,7 +17,7 @@ class CommandHistory(private val capacity: Int = DEFAULT_CAPACITY) {
             entries.remove(normalized)
             entries.add(0, normalized)
             if (entries.size > capacity) {
-                entries.removeLast()
+                entries.removeAt(entries.lastIndex)
             }
         }
     }
