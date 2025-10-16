@@ -8,6 +8,33 @@ A modern command-line overlay for IdeaVim users that makes `:`, `/`, and `?` fee
 `IdeaVim-CmdFloat` provides an editor-themed command-line overlay for IdeaVim. When it detects triggers such as `:`, `/`, or `?`, it shows a visual panel with instant focus, provides quick history navigation, and replays the command back to IdeaVim. The overlay is automatically disabled when IdeaVim is unavailable or the IDE runs in LightEdit mode to avoid conflicts.
 <!-- Plugin description end -->
 
+<table>
+  <tr>
+    <th>Search/Ex Command Float</th>
+    <th>Search Completion</th>
+  </tr>
+  <tr>
+    <td>
+      <img src="https://github.com/user-attachments/assets/12c73a66-4274-45e9-9acd-24815a66d667" />
+    </td>
+    <td>
+      <img src="https://github.com/user-attachments/assets/1690c669-111f-4dc2-9868-1ed84a8e8b14" />
+    </td>
+  </tr>
+  <tr>
+    <th>CmdLine Actions</th>
+    <th>CmdLine Completion</th>
+  </tr>
+  <tr>
+    <td>
+      <img src="https://github.com/user-attachments/assets/61bff15f-f576-4087-bcdb-da95f07f5064" />
+    </td>
+    <td>
+      <img src="https://github.com/user-attachments/assets/569db5df-341d-4480-8eba-22767c64e2d5" />
+    </td>
+  </tr>
+</table>
+
 ## Key Features
 - Intercepts `:`, `/`, and `?` to display a command or search overlay near the caret instead of at the status bar.
 - Stores the most recent 20 commands or searches; use `Up`/`Down` to cycle through history and `Esc` to cancel.
@@ -16,6 +43,9 @@ A modern command-line overlay for IdeaVim users that makes `:`, `/`, and `?` fee
 - Skips initialization in headless, LightEdit, or non-Normal mode editors to reduce accidental triggers.
 
 ## Usage
+
+Search for the plugin name `Vim CmdFloat` in the plugin marketplace, then install it.
+
 - Make sure IdeaVim is installed and the editor is in Normal mode.
 - Press `:` for Ex commands or `/` and `?` for search; the overlay appears automatically.
 - Press `Enter` to submit. The command is replayed in IdeaVim; press `Esc` to close without executing.
