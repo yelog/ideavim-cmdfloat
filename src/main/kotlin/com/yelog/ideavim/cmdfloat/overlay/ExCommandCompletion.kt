@@ -1,9 +1,6 @@
 package com.yelog.ideavim.cmdfloat.overlay
 
 import com.intellij.openapi.diagnostic.Logger
-import com.maddyhome.idea.vim.vimscript.model.commands.EngineExCommandProvider
-import com.maddyhome.idea.vim.vimscript.model.commands.ExCommandProvider
-import com.maddyhome.idea.vim.vimscript.model.commands.IntellijExCommandProvider
 
 object ExCommandCompletion {
 
@@ -50,17 +47,22 @@ object ExCommandCompletion {
     private fun loadSuggestions(): List<Suggestion> {
         return try {
             val unique = LinkedHashMap<String, Suggestion>()
-            val providers = listOf<ExCommandProvider>(
-                EngineExCommandProvider,
-                IntellijExCommandProvider,
+            val providers = listOfNotNull(
+                loadProviderInstance(
+                    "com.maddyhome.idea.vim.vimscript.model.commands.EngineExCommandProvider",
+                    "com.maddyhome.idea.vim.vimscript.model.commands.engine.EngineExCommandProvider",
+                ),
+                loadProviderInstance(
+                    "com.maddyhome.idea.vim.vimscript.model.commands.IntellijExCommandProvider",
+                    "com.maddyhome.idea.vim.vimscript.model.commands.intellij.IntellijExCommandProvider",
+                ),
             )
 
             for (provider in providers) {
-                val commands = runCatching { provider.getCommands() }
-                    .getOrElse { throwable ->
-                        logger.warn("Failed to load ex commands from ${provider.javaClass.name}", throwable)
-                        emptyMap<String, Any?>()
-                    }
+                val commands = readCommands(provider)
+                if (commands.isEmpty()) {
+                    continue
+                }
                 for (rawKey in commands.keys) {
                     val match = normalizeForMatch(rawKey)
                     if (match.isEmpty()) {
@@ -87,6 +89,57 @@ object ExCommandCompletion {
             logger.warn("Unable to initialize ex command suggestions.", throwable)
             emptyList()
         }
+    }
+
+    private fun loadProviderInstance(vararg classNames: String): Any? {
+        for (name in classNames) {
+            if (name.isBlank()) continue
+            val clazz = runCatching { Class.forName(name) }.getOrNull() ?: continue
+            runCatching {
+                val instanceField = clazz.getDeclaredField("INSTANCE")
+                instanceField.isAccessible = true
+                instanceField.get(null)
+            }.onSuccess { return it }
+            runCatching {
+                val getter = clazz.methods.firstOrNull { it.parameterCount == 0 && it.returnType == clazz && it.name == "getInstance" }
+                if (getter != null) {
+                    return getter.invoke(null)
+                }
+            }
+            runCatching {
+                val constructor = clazz.getDeclaredConstructor()
+                constructor.isAccessible = true
+                constructor.newInstance()
+            }.onSuccess { return it }
+        }
+        return null
+    }
+
+    private fun readCommands(provider: Any): Map<String, Any?> {
+        val method = runCatching {
+            provider::class.java.methods.firstOrNull { it.name == "getCommands" && it.parameterCount == 0 }
+        }.getOrNull() ?: return emptyMap()
+        val result = runCatching { method.invoke(provider) }.getOrElse { throwable ->
+            logger.warn("Failed to invoke getCommands on ${provider.javaClass.name}", throwable)
+            return emptyMap()
+        }
+        return when (result) {
+            is Map<*, *> -> result.filterStringKeys()
+            else -> {
+                logger.warn("Unexpected commands container from ${provider.javaClass.name}: ${result?.javaClass?.name}")
+                emptyMap()
+            }
+        }
+    }
+
+    private fun Map<*, *>.filterStringKeys(): Map<String, Any?> {
+        val output = LinkedHashMap<String, Any?>()
+        for ((key, value) in this) {
+            if (key is String) {
+                output[key] = value
+            }
+        }
+        return output
     }
 
     private fun normalizeForMatch(raw: String): String {

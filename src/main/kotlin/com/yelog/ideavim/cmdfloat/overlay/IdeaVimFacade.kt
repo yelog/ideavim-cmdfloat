@@ -7,8 +7,6 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.editor.ScrollType
-import com.maddyhome.idea.vim.VimPlugin
-import com.maddyhome.idea.vim.options.Option
 import java.awt.Rectangle
 import java.awt.event.InputEvent
 import java.awt.event.KeyEvent
@@ -33,6 +31,10 @@ object IdeaVimFacade {
     private val vimPluginKeyMethod = vimPluginClass?.getMethod("getKey")
     private val vimPluginSearchMethod = vimPluginClass?.getMethod("getSearch")
     private val vimPluginEditorMethod = vimPluginClass?.getMethod("getEditor")
+    private val vimPluginOptionGroupMethod = run {
+        val clazz = vimPluginClass ?: return@run null
+        runCatching { clazz.getMethod("getOptionGroup") }.getOrNull()
+    }
     private val handleKeyMethodCache = ConcurrentHashMap<Class<*>, List<Method>>()
     private val handleKeyFailureLogged = ConcurrentHashMap.newKeySet<String>()
     private val vimEditorClass = loadClass("com.maddyhome.idea.vim.api.VimEditor")
@@ -155,8 +157,9 @@ object IdeaVimFacade {
         }
 
         return try {
-            val optionGroup = runCatching { VimPlugin.getOptionGroup() }.getOrNull() ?: return emptyList()
-            optionGroup.getAllOptions().mapNotNull { option: Option<*> ->
+            val optionGroup = obtainOptionGroup() ?: return emptyList()
+            val allOptions = readAllOptions(optionGroup)
+            allOptions.mapNotNull { option ->
                 val optionName = safeOptionName(option) ?: return@mapNotNull null
                 val abbreviation = safeOptionAbbreviation(option)
                 OptionInfo(name = optionName, abbreviation = abbreviation)
@@ -243,22 +246,81 @@ object IdeaVimFacade {
         restoreCaret(editor, initialOffset)
     }
 
-    private fun safeOptionName(option: Option<*>?): String? {
+    private fun readAllOptions(optionGroup: Any): Collection<Any?> {
+        val method = optionGroup.javaClass.methods.firstOrNull { candidate ->
+            candidate.parameterCount == 0 && candidate.name == "getAllOptions"
+        } ?: return emptyList()
+        val raw = runCatching {
+            if (!method.canAccess(optionGroup)) {
+                method.isAccessible = true
+            }
+            method.invoke(optionGroup)
+        }.getOrElse { throwable ->
+            logger.warn("Failed to invoke getAllOptions on ${optionGroup.javaClass.name}", throwable)
+            return emptyList()
+        }
+        return when (raw) {
+            is Collection<*> -> raw as Collection<Any?>
+            is Array<*> -> raw.toList()
+            else -> {
+                logger.warn("Unexpected getAllOptions result type: ${raw?.javaClass?.name}")
+                emptyList()
+            }
+        }
+    }
+
+    private fun obtainOptionGroup(): Any? {
+        val method = vimPluginOptionGroupMethod ?: return null
         return try {
-            option?.name
+            if (!method.canAccess(null)) {
+                method.isAccessible = true
+            }
+            method.invoke(null)
         } catch (throwable: Throwable) {
-            logger.debug("Failed to read IdeaVim option name.", throwable)
+            logger.debug("Failed to obtain IdeaVim option group.", throwable)
             null
         }
     }
 
-    private fun safeOptionAbbreviation(option: Option<*>?): String? {
-        return try {
-            option?.abbrev?.takeIf { it.isNotBlank() }
-        } catch (throwable: Throwable) {
-            logger.debug("Failed to read IdeaVim option abbreviation.", throwable)
-            null
+    private fun safeOptionName(option: Any?): String? {
+        option ?: return null
+        return readStringProperty(option, "getName", "name")
+    }
+
+    private fun safeOptionAbbreviation(option: Any?): String? {
+        option ?: return null
+        return readStringProperty(option, "getAbbrev", "abbrev")?.takeIf { it.isNotBlank() }
+    }
+
+    private fun readStringProperty(target: Any, vararg accessors: String): String? {
+        for (name in accessors) {
+            val result = runCatching {
+                val method = target.javaClass.methods.firstOrNull { it.name == name && it.parameterCount == 0 }
+                if (method != null) {
+                    if (!method.canAccess(target)) {
+                        method.isAccessible = true
+                    }
+                    method.invoke(target) as? String
+                } else {
+                    val field = runCatching { target.javaClass.getDeclaredField(name) }.getOrNull()
+                    if (field != null) {
+                        if (!field.canAccess(target)) {
+                            field.isAccessible = true
+                        }
+                        field.get(target) as? String
+                    } else {
+                        null
+                    }
+                }
+            }.getOrElse {
+                logger.debug("Failed to read property $name from ${target.javaClass.name}", it)
+                null
+            }
+            if (!result.isNullOrBlank()) {
+                return result
+            }
         }
+        return null
     }
 
     private fun readBooleanOption(optionName: String): Boolean? {
@@ -266,7 +328,7 @@ object IdeaVimFacade {
             return null
         }
         return try {
-            val optionGroup = runCatching { VimPlugin.getOptionGroup() }.getOrNull() ?: return null
+            val optionGroup = obtainOptionGroup() ?: return null
             val optionInstance = getOptionFromGroup(optionGroup, optionName) ?: return null
             val rawValue = extractOptionValue(optionInstance) ?: return null
             when (rawValue) {

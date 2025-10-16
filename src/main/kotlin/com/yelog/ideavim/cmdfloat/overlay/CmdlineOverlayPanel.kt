@@ -208,7 +208,7 @@ class CmdlineOverlayPanel(
             background = scheme.toOverlayInputBackground()
             foreground = scheme.defaultForeground ?: JBColor.foreground()
             caretColor = foreground
-            font = JBFont.regular().deriveFont(Font.PLAIN, JBUI.scale(14f))
+            font = JBFont.regular().deriveFont(Font.PLAIN, scaledFontSize(14f))
             preferredSize = Dimension(JBUI.scale(200), inputHeight)
             minimumSize = Dimension(JBUI.scale(200), inputHeight)
             margin = JBUI.insets(0, 1, 0, 6)
@@ -222,13 +222,23 @@ class CmdlineOverlayPanel(
         }
     }
 
+    @Suppress("DEPRECATION")
+    private fun scaledFontSize(value: Float): Float {
+        val scaled = runCatching {
+            val clazz = Class.forName("com.intellij.util.ui.JBUIScale")
+            val method = clazz.getMethod("scale", java.lang.Float.TYPE)
+            (method.invoke(null, value) as? Number)?.toFloat()
+        }.getOrNull()
+        return scaled ?: JBUI.scale(value.toInt()).toFloat()
+    }
+
     private fun createSearchResultLabel(): JBLabel {
         val inputHeight = JBUI.scale(28)
         return JBLabel(NO_RESULTS_TEXT, SwingConstants.RIGHT).apply {
             border = JBUI.Borders.empty(0, 8, 0, 4)
             isOpaque = false
             foreground = SEARCH_RESULT_NEUTRAL_COLOR
-            font = JBFont.label().deriveFont(Font.BOLD, JBUI.scale(12f))
+            font = JBFont.label().deriveFont(Font.BOLD, scaledFontSize(12f))
             preferredSize = Dimension(JBUI.scale(80), inputHeight)
             minimumSize = Dimension(JBUI.scale(60), inputHeight)
             maximumSize = Dimension(JBUI.scale(120), inputHeight)
@@ -241,7 +251,7 @@ class CmdlineOverlayPanel(
         val label = JBLabel().apply {
             border = JBUI.Borders.empty(0, 6, 0, 0)
             foreground = focusComponent.foreground
-            font = JBFont.label().deriveFont(Font.BOLD, JBUI.scale(16f))
+            font = JBFont.label().deriveFont(Font.BOLD, scaledFontSize(16f))
             preferredSize = Dimension(JBUI.scale(if (isSearchMode) 26 else 24), inputHeight)
             isOpaque = true
             background = focusComponent.background
