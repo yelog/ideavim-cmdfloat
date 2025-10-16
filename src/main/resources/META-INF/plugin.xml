@@ -2,10 +2,10 @@
 https://plugins.jetbrains.com/docs/intellij/plugin-configuration-file.html -->
 <idea-plugin>
   <id>com.yelog.ideavim.cmdfloat</id>
-  <name>IdeaVim-CmdFloat</name>
+  <name>CmdFloat</name>
   <vendor>yelog</vendor>
   <description><![CDATA[
-    <p><code>IdeaVim-CmdFloat</code> is a modern command-line overlay for IdeaVim users that makes `:`, `/`, and `?` feel quicker and easier to use.</p>
+    <p><code>CmdFloat</code> is a modern command-line overlay for IdeaVim users that makes `:`, `/`, and `?` feel quicker and easier to use.</p>
     <h2>Key Features</h2>
     <ul>
     <li>Intercepts <code>:</code>, <code>/</code>, and <code>?</code> to display a command or search overlay near the caret instead of at the status bar.</li>
