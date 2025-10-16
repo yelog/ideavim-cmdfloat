@@ -57,7 +57,7 @@ Search for the plugin name `Vim CmdFloat` in the plugin marketplace, then instal
 - Only active in standard project windows; LightEdit mode is ignored.
 
 ## Installation
-- **JetBrains Marketplace (coming soon)**: `Settings/Preferences` > `Plugins` > `Marketplace` > search for `IdeaVim-CmdFloat` > Install.
+- **JetBrains Marketplace**: `Settings/Preferences` > `Plugins` > `Marketplace` > search for `Vim CmdFloat` > Install.
 - **Manual install**: download the [latest release](https://github.com/yelog/ideavim-cmdfloat/releases/latest), then go to `Settings/Preferences` > `Plugins` > `gear icon` > `Install Plugin from Disk...` and select the ZIP.
 - **Local build**: run `./gradlew buildPlugin` and install the generated ZIP from `build/distributions`.
 
