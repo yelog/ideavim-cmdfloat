@@ -2,6 +2,16 @@
 
 # IdeaVim-CmdFloat Changelog
 
+## 0.0.1
+
+### Added
+
+- Support displaying input and execution of Search and CmdLine via floating window
+- CmdLine supports suggestion options
+- Search supports showing all current words
+- Search supports displaying the total number of matches and the current index
+- The suggestion box supports shortcut keys by default: up/down arrows, Tab/Shift+Tab, ctrl+n/ctrl+p
+
 ## [Unreleased]
 ### Added
 - Initial scaffold created from [IntelliJ Platform Plugin Template](https://github.com/JetBrains/intellij-platform-plugin-template)

@@ -1,15 +1,41 @@
-<!-- Plugin Configuration File. Read more: https://plugins.jetbrains.com/docs/intellij/plugin-configuration-file.html -->
+<!-- Plugin Configuration File. Read more:
+https://plugins.jetbrains.com/docs/intellij/plugin-configuration-file.html -->
 <idea-plugin>
-    <id>com.yelog.ideavim.cmdfloat</id>
-    <name>IdeaVim-CmdFloat</name>
-    <vendor>yelog</vendor>
+  <id>com.yelog.ideavim.cmdfloat</id>
+  <name>IdeaVim-CmdFloat</name>
+  <vendor>yelog</vendor>
+  <description><![CDATA[
+    <p><code>IdeaVim-CmdFloat</code> is a modern command-line overlay for IdeaVim users that makes `:`, `/`, and `?` feel quicker and easier to use.</p>
+    <h2>Key Features</h2>
+    <ul>
+    <li>Intercepts <code>:</code>, <code>/</code>, and <code>?</code> to display a command or search overlay near the caret instead of at the status bar.</li>
+    <li>Stores the most recent 20 commands or searches; use <code>Up</code>/<code>Down</code> to cycle through history and <code>Esc</code> to cancel.</li>
+    <li>CmdLine supports suggestion options</li>
+    <li>Search supports showing all current words</li>
+    <li>Search supports displaying the total number of matches and the current index</li>
+    <li>The suggestion box supports shortcut keys by default: up/down arrows, Tab/Shift+Tab, ctrl+n/ctrl+p</li>
+    </ul>
+    ]]></description>
 
-    <depends>com.intellij.modules.platform</depends>
-    <depends>IdeaVIM</depends>
+  <depends>com.intellij.modules.platform</depends>
+  <depends>IdeaVIM</depends>
 
-    <resource-bundle>messages.MyBundle</resource-bundle>
+  <resource-bundle>messages.MyBundle</resource-bundle>
 
-    <extensions defaultExtensionNs="com.intellij">
-        <postStartupActivity implementation="com.yelog.ideavim.cmdfloat.startup.CmdlineOverlayStartupActivity" />
-    </extensions>
+  <extensions defaultExtensionNs="com.intellij">
+    <postStartupActivity
+      implementation="com.yelog.ideavim.cmdfloat.startup.CmdlineOverlayStartupActivity" />
+  </extensions>
+
+  <change-notes><![CDATA[
+        <h2>0.0.1</h2>
+        <ul>
+            <li>Support displaying input and execution of Search and CmdLine via floating window</li>
+            <li>CmdLine supports suggestion options</li>
+            <li>Search supports showing all current words</li>
+            <li>Search supports displaying the total number of matches and the current index</li>
+            <li>The suggestion box supports shortcut keys by default: up/down arrows, Tab/Shift+Tab, ctrl+n/ctrl+p</li>
+        </ul>
+    ]]></change-notes>
+
 </idea-plugin>
