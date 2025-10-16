@@ -1437,6 +1437,10 @@ class CmdlineOverlayPanel(
         textField.text = value
         textField.caretPosition = value.length
         programmaticUpdate = false
+        triggerSearchPreview(value)
+        if (mode == OverlayMode.COMMAND) {
+            updateCommandPatternPreview(value)
+        }
         if (isSearchMode()) {
             updateSearchResultIndicator(value)
         }
