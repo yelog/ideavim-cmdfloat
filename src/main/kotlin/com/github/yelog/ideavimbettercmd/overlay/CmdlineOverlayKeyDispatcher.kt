@@ -57,6 +57,9 @@ class CmdlineOverlayKeyDispatcher(
             if (!manager.ownsComponent(source)) {
                 return false
             }
+            if (!manager.isEditorComponent(source)) {
+                return false
+            }
         }
 
         val overlayMode = event.detectOverlayMode() ?: return false

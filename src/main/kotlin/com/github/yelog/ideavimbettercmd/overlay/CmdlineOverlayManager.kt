@@ -78,6 +78,12 @@ class CmdlineOverlayManager(private val project: Project) {
         return projectFrame.isAncestorOf(window)
     }
 
+    fun isEditorComponent(component: Component): Boolean {
+        val editor = currentEditor() ?: return false
+        val editorComponent = (editor as? EditorEx)?.contentComponent ?: editor.contentComponent
+        return component == editorComponent || editorComponent.isAncestorOf(component)
+    }
+
     private fun showOverlay(editor: Editor, mode: OverlayMode, history: CommandHistory) {
         val searchCandidates = when (mode) {
             OverlayMode.SEARCH_FORWARD, OverlayMode.SEARCH_BACKWARD, OverlayMode.COMMAND -> collectSearchWords(editor)
