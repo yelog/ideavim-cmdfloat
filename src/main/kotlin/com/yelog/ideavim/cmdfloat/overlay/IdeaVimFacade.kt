@@ -1,4 +1,4 @@
-package com.github.yelog.ideavimbettercmd.overlay
+package com.yelog.ideavim.cmdfloat.overlay
 
 import com.intellij.ide.DataManager
 import com.intellij.ide.IdeEventQueue

@@ -1,4 +1,4 @@
-package com.github.yelog.ideavimbettercmd.overlay
+package com.yelog.ideavim.cmdfloat.overlay
 
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.editor.Editor
@@ -6,7 +6,7 @@ import com.intellij.openapi.editor.colors.EditorColorsManager
 import com.intellij.openapi.editor.colors.EditorColorsScheme
 import com.intellij.openapi.ui.popup.JBPopup
 import com.intellij.openapi.ui.popup.JBPopupFactory
-import com.github.yelog.ideavimbettercmd.overlay.OptionCommandCompletion
+import com.yelog.ideavim.cmdfloat.overlay.OptionCommandCompletion
 import com.intellij.ui.CollectionListModel
 import com.intellij.ui.ColoredListCellRenderer
 import com.intellij.ui.JBColor

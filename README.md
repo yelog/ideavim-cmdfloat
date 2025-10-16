@@ -1,11 +1,11 @@
-# ideavim-better-cmd
+# IdeaVim-CmdFloat
 
-![Build](https://github.com/yelog/ideavim-better-cmd/workflows/Build/badge.svg)
+![Build](https://github.com/yelog/ideavim-cmdfloat/workflows/Build/badge.svg)
 
 A modern command-line overlay for IdeaVim users that makes `:`, `/`, and `?` feel quicker and easier to use.
 
 <!-- Plugin description -->
-`ideavim-better-cmd` provides an editor-themed command-line overlay for IdeaVim. When it detects triggers such as `:`, `/`, or `?`, it shows a visual panel with instant focus, provides quick history navigation, and replays the command back to IdeaVim. The overlay is automatically disabled when IdeaVim is unavailable or the IDE runs in LightEdit mode to avoid conflicts.
+`IdeaVim-CmdFloat` provides an editor-themed command-line overlay for IdeaVim. When it detects triggers such as `:`, `/`, or `?`, it shows a visual panel with instant focus, provides quick history navigation, and replays the command back to IdeaVim. The overlay is automatically disabled when IdeaVim is unavailable or the IDE runs in LightEdit mode to avoid conflicts.
 <!-- Plugin description end -->
 
 ## Key Features
@@ -27,8 +27,8 @@ A modern command-line overlay for IdeaVim users that makes `:`, `/`, and `?` fee
 - Only active in standard project windows; LightEdit mode is ignored.
 
 ## Installation
-- **JetBrains Marketplace (coming soon)**: `Settings/Preferences` > `Plugins` > `Marketplace` > search for `ideavim-better-cmd` > Install.
-- **Manual install**: download the [latest release](https://github.com/yelog/ideavim-better-cmd/releases/latest), then go to `Settings/Preferences` > `Plugins` > `gear icon` > `Install Plugin from Disk...` and select the ZIP.
+- **JetBrains Marketplace (coming soon)**: `Settings/Preferences` > `Plugins` > `Marketplace` > search for `IdeaVim-CmdFloat` > Install.
+- **Manual install**: download the [latest release](https://github.com/yelog/ideavim-cmdfloat/releases/latest), then go to `Settings/Preferences` > `Plugins` > `gear icon` > `Install Plugin from Disk...` and select the ZIP.
 - **Local build**: run `./gradlew buildPlugin` and install the generated ZIP from `build/distributions`.
 
 ## Build and Debug from Source

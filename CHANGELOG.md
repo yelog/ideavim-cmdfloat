@@ -1,6 +1,6 @@
 <!-- Keep a Changelog guide -> https://keepachangelog.com -->
 
-# ideavim-better-cmd Changelog
+# IdeaVim-CmdFloat Changelog
 
 ## [Unreleased]
 ### Added

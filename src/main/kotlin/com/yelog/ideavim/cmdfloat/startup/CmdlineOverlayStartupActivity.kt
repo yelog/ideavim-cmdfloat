@@ -1,6 +1,6 @@
-package com.github.yelog.ideavimbettercmd.startup
+package com.yelog.ideavim.cmdfloat.startup
 
-import com.github.yelog.ideavimbettercmd.services.CmdlineOverlayService
+import com.yelog.ideavim.cmdfloat.services.CmdlineOverlayService
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project

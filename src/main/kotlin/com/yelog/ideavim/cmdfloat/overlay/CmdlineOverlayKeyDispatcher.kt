@@ -1,4 +1,4 @@
-package com.github.yelog.ideavimbettercmd.overlay
+package com.yelog.ideavim.cmdfloat.overlay
 
 import java.awt.Component
 import java.awt.KeyEventDispatcher

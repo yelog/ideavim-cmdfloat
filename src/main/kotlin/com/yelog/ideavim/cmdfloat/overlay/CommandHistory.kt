@@ -1,4 +1,4 @@
-package com.github.yelog.ideavimbettercmd.overlay
+package com.yelog.ideavim.cmdfloat.overlay
 
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock

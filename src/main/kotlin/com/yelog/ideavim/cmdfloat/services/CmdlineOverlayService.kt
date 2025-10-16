@@ -1,8 +1,8 @@
-package com.github.yelog.ideavimbettercmd.services
+package com.yelog.ideavim.cmdfloat.services
 
-import com.github.yelog.ideavimbettercmd.overlay.CmdlineOverlayKeyDispatcher
-import com.github.yelog.ideavimbettercmd.overlay.CmdlineOverlayManager
-import com.github.yelog.ideavimbettercmd.overlay.IdeaVimFacade
+import com.yelog.ideavim.cmdfloat.overlay.CmdlineOverlayKeyDispatcher
+import com.yelog.ideavim.cmdfloat.overlay.CmdlineOverlayManager
+import com.yelog.ideavim.cmdfloat.overlay.IdeaVimFacade
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger

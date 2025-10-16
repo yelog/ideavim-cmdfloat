@@ -1,4 +1,4 @@
-package com.github.yelog.ideavimbettercmd
+package com.yelog.ideavim.cmdfloat
 
 import com.intellij.DynamicBundle
 import org.jetbrains.annotations.NonNls
