@@ -2,6 +2,10 @@
 
 # IdeaVim-CmdFloat Changelog
 
+## 0.0.2
+
+- fix: Incorrect triggering of Search/CmdLine when executing operations such as `r:`, `f:`, `T/`, etc.
+
 ## 0.0.1
 
 ### Added

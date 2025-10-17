@@ -28,6 +28,10 @@ https://plugins.jetbrains.com/docs/intellij/plugin-configuration-file.html -->
   </extensions>
 
   <change-notes><![CDATA[
+        <h2>0.0.2</h2>
+        <ul>
+        <li>fix: Incorrect triggering of Search/CmdLine when executing operations such as <code>r:</code>, <code>f:</code>, <code>T/</code>, etc.</li>
+        </ul>
         <h2>0.0.1</h2>
         <ul>
             <li>Support displaying input and execution of Search and CmdLine via floating window</li>
