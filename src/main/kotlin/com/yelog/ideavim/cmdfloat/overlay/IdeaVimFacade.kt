@@ -32,6 +32,14 @@ object IdeaVimFacade {
         val clazz = commandStateClass ?: return@run null
         runCatching { clazz.getMethod("getCommandBuilder") }.getOrNull()
     }
+    private val commandStateMappingStateMethod = run {
+        val clazz = commandStateClass ?: return@run null
+        runCatching { clazz.getMethod("getMappingState") }.getOrNull()
+    }
+    private val commandStateIsOperatorPendingMethod = run {
+        val clazz = commandStateClass ?: return@run null
+        runCatching { clazz.getMethod("isOperatorPending") }.getOrNull()
+    }
     private val vimPluginInstanceMethod = vimPluginClass?.getMethod("getInstance")
     private val vimPluginKeyMethod = vimPluginClass?.getMethod("getKey")
     private val vimPluginSearchMethod = vimPluginClass?.getMethod("getSearch")
@@ -105,9 +113,27 @@ object IdeaVimFacade {
         }
     }
     private val searchPreviewState = ConcurrentHashMap<Editor, SearchPreviewState>()
+    private val commandBuilderClass = loadClass("com.maddyhome.idea.vim.command.CommandBuilder")
     private val commandBuilderAwaitingMethod = run {
-        val clazz = loadClass("com.maddyhome.idea.vim.command.CommandBuilder") ?: return@run null
+        val clazz = commandBuilderClass ?: return@run null
         runCatching { clazz.getMethod("isAwaitingCharOrDigraphArgument") }.getOrNull()
+    }
+    private val commandBuilderIsEmptyMethod = run {
+        val clazz = commandBuilderClass ?: return@run null
+        runCatching { clazz.getMethod("isEmpty") }.getOrNull()
+    }
+    private val commandBuilderIsBuildingMultiKeyMethod = run {
+        val clazz = commandBuilderClass ?: return@run null
+        runCatching { clazz.getMethod("isBuildingMultiKeyCommand") }.getOrNull()
+    }
+    private val commandBuilderIsPuttingLiteralMethod = run {
+        val clazz = commandBuilderClass ?: return@run null
+        runCatching { clazz.getMethod("isPuttingLiteral") }.getOrNull()
+    }
+    private val mappingStateClass = loadClass("com.maddyhome.idea.vim.command.MappingState")
+    private val mappingStateIsExecutingMethod = run {
+        val clazz = mappingStateClass ?: return@run null
+        runCatching { clazz.getMethod("isExecutingMap") }.getOrNull()
     }
     private val awaitingCharFailureLogged = AtomicBoolean(false)
 
@@ -151,18 +177,57 @@ object IdeaVimFacade {
         if (!isAvailable()) {
             return false
         }
-        val builderMethod = commandStateCommandBuilderMethod ?: return false
-        val awaitingMethod = commandBuilderAwaitingMethod ?: return false
         return try {
             val commandState = commandStateInstanceMethod?.invoke(null, editor) ?: return false
-            val builder = builderMethod.invoke(commandState) ?: return false
-            (awaitingMethod.invoke(builder) as? Boolean) == true
+            if (commandStateHasPendingCommand(commandState)) {
+                return true
+            }
+            commandStateHasActiveMapping(commandState)
         } catch (throwable: Throwable) {
             if (awaitingCharFailureLogged.compareAndSet(false, true)) {
                 logger.warn("Failed to query IdeaVim command builder state.", throwable)
             }
             false
         }
+    }
+
+    private fun commandStateHasPendingCommand(commandState: Any): Boolean {
+        val builder = commandStateCommandBuilderMethod?.let { method ->
+            runCatching { method.invoke(commandState) }.getOrNull()
+        } ?: return invokeBoolean(commandStateIsOperatorPendingMethod, commandState) == true
+
+        if (invokeBoolean(commandBuilderAwaitingMethod, builder) == true) {
+            return true
+        }
+
+        if (invokeBoolean(commandBuilderIsBuildingMultiKeyMethod, builder) == true) {
+            return true
+        }
+
+        if (invokeBoolean(commandBuilderIsPuttingLiteralMethod, builder) == true) {
+            return true
+        }
+
+        val isEmpty = invokeBoolean(commandBuilderIsEmptyMethod, builder)
+        if (isEmpty == false) {
+            return true
+        }
+
+        return invokeBoolean(commandStateIsOperatorPendingMethod, commandState) == true
+    }
+
+    private fun commandStateHasActiveMapping(commandState: Any): Boolean {
+        val mappingState = commandStateMappingStateMethod?.let { method ->
+            runCatching { method.invoke(commandState) }.getOrNull()
+        } ?: return false
+        return invokeBoolean(mappingStateIsExecutingMethod, mappingState) == true
+    }
+
+    private fun invokeBoolean(method: Method?, target: Any): Boolean? {
+        if (method == null) {
+            return null
+        }
+        return runCatching { method.invoke(target) as? Boolean }.getOrNull()
     }
 
     private fun editorModeName(editor: Editor): String? {
