@@ -13,6 +13,7 @@ import java.awt.event.KeyEvent
 import java.lang.reflect.Method
 import java.lang.reflect.Modifier
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import javax.swing.KeyStroke
 
@@ -27,6 +28,10 @@ object IdeaVimFacade {
     )
     private val commandStateInstanceMethod = commandStateClass?.getMethod("getInstance", Editor::class.java)
     private val commandStateModeMethod = commandStateClass?.getMethod("getMode")
+    private val commandStateCommandBuilderMethod = run {
+        val clazz = commandStateClass ?: return@run null
+        runCatching { clazz.getMethod("getCommandBuilder") }.getOrNull()
+    }
     private val vimPluginInstanceMethod = vimPluginClass?.getMethod("getInstance")
     private val vimPluginKeyMethod = vimPluginClass?.getMethod("getKey")
     private val vimPluginSearchMethod = vimPluginClass?.getMethod("getSearch")
@@ -100,6 +105,11 @@ object IdeaVimFacade {
         }
     }
     private val searchPreviewState = ConcurrentHashMap<Editor, SearchPreviewState>()
+    private val commandBuilderAwaitingMethod = run {
+        val clazz = loadClass("com.maddyhome.idea.vim.command.CommandBuilder") ?: return@run null
+        runCatching { clazz.getMethod("isAwaitingCharOrDigraphArgument") }.getOrNull()
+    }
+    private val awaitingCharFailureLogged = AtomicBoolean(false)
 
     data class OptionInfo(
         val name: String,
@@ -135,6 +145,24 @@ object IdeaVimFacade {
         }
         val modeName = editorModeName(editor) ?: return false
         return modeName.startsWith("VISUAL") || modeName == "SELECT"
+    }
+
+    fun isAwaitingCharArgument(editor: Editor): Boolean {
+        if (!isAvailable()) {
+            return false
+        }
+        val builderMethod = commandStateCommandBuilderMethod ?: return false
+        val awaitingMethod = commandBuilderAwaitingMethod ?: return false
+        return try {
+            val commandState = commandStateInstanceMethod?.invoke(null, editor) ?: return false
+            val builder = builderMethod.invoke(commandState) ?: return false
+            (awaitingMethod.invoke(builder) as? Boolean) == true
+        } catch (throwable: Throwable) {
+            if (awaitingCharFailureLogged.compareAndSet(false, true)) {
+                logger.warn("Failed to query IdeaVim command builder state.", throwable)
+            }
+            false
+        }
     }
 
     private fun editorModeName(editor: Editor): String? {

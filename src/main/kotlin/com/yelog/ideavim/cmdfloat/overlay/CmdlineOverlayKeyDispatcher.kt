@@ -50,7 +50,7 @@ class CmdlineOverlayKeyDispatcher(
         }
 
         val source = event.component
-        if (source != null) {
+        val editor = if (source != null) {
             if (manager.isOverlayComponent(source)) {
                 return false
             }
@@ -60,6 +60,13 @@ class CmdlineOverlayKeyDispatcher(
             if (!manager.isEditorComponent(source)) {
                 return false
             }
+            manager.findEditor(source)
+        } else {
+            manager.findEditor(null)
+        }
+
+        if (editor != null && IdeaVimFacade.isAwaitingCharArgument(editor)) {
+            return false
         }
 
         val overlayMode = event.detectOverlayMode() ?: return false
