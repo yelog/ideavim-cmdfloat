@@ -244,10 +244,13 @@ class CmdlineOverlayPanel(
         if (isSearchMode) {
             label.icon = AllIcons.Actions.Search
         } else {
-            // 使用 FontAwesome 私有区字符 U+F054（），若当前字体不可显示则回退到通用箭头 ❯
+            // 调整命令模式前缀符号的位置：进一步右移以与搜索图标视觉对齐
             val promptChar = '\uF054'
             label.text = if (label.font.canDisplay(promptChar)) promptChar.toString() else "❯"
             label.toolTipText = "命令输入"
+            // 增加左侧缩进并适度增宽以居中该窄字符
+            label.border = JBUI.Borders.empty(0, 14, 0, 0)
+            label.preferredSize = Dimension(JBUI.scale(26), inputHeight)
         }
         return label
     }
