@@ -101,7 +101,8 @@ object ExCommandCompletion {
                 instanceField.get(null)
             }.onSuccess { return it }
             runCatching {
-                val getter = clazz.methods.firstOrNull { it.parameterCount == 0 && it.returnType == clazz && it.name == "getInstance" }
+                val getter =
+                    clazz.methods.firstOrNull { it.parameterCount == 0 && it.returnType == clazz && it.name == "getInstance" }
                 if (getter != null) {
                     return getter.invoke(null)
                 }

@@ -75,8 +75,8 @@ object ActionCommandCompletion {
     private fun readActionIdSequence(manager: ActionManagerEx, prefix: String): Sequence<String>? {
         val method = manager.javaClass.methods.firstOrNull { candidate ->
             candidate.name == "getActionIdSequence" &&
-                candidate.parameterCount == 1 &&
-                candidate.parameterTypes[0] == String::class.java
+                    candidate.parameterCount == 1 &&
+                    candidate.parameterTypes[0] == String::class.java
         } ?: return null
         val result = runCatching {
             if (!method.canAccess(manager)) {
@@ -103,8 +103,8 @@ object ActionCommandCompletion {
     private fun readLegacyActionIds(manager: ActionManagerEx, prefix: String): Sequence<String>? {
         val method = manager.javaClass.methods.firstOrNull { candidate ->
             candidate.name == "getActionIds" &&
-                candidate.parameterCount == 1 &&
-                candidate.parameterTypes[0] == String::class.java
+                    candidate.parameterCount == 1 &&
+                    candidate.parameterTypes[0] == String::class.java
         } ?: return null
         val result = runCatching {
             if (!method.canAccess(manager)) {

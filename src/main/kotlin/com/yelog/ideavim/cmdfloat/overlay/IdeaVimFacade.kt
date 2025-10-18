@@ -73,7 +73,13 @@ object IdeaVimFacade {
         val direction = directionClass
         if (group != null && direction != null) {
             runCatching {
-                group.getMethod("setLastSearchState", Editor::class.java, String::class.java, String::class.java, direction)
+                group.getMethod(
+                    "setLastSearchState",
+                    Editor::class.java,
+                    String::class.java,
+                    String::class.java,
+                    direction
+                )
             }.getOrNull()
         } else {
             null
@@ -440,8 +446,8 @@ object IdeaVimFacade {
         val methods = optionGroup.javaClass.methods
         val candidate = methods.firstOrNull { method ->
             method.parameterCount == 1 &&
-                method.parameterTypes[0] == String::class.java &&
-                (method.name == "getOption" || method.name == "getOptionValue")
+                    method.parameterTypes[0] == String::class.java &&
+                    (method.name == "getOption" || method.name == "getOptionValue")
         } ?: return null
         return try {
             if (!candidate.canAccess(optionGroup)) {
@@ -541,8 +547,8 @@ object IdeaVimFacade {
         val methods = handleKeyMethodCache.computeIfAbsent(handlerClass) {
             handlerClass.methods.filter { method ->
                 method.name == "handleKey" &&
-                    method.parameterTypes.any { Editor::class.java.isAssignableFrom(it) } &&
-                    method.parameterTypes.any { KeyStroke::class.java.isAssignableFrom(it) }
+                        method.parameterTypes.any { Editor::class.java.isAssignableFrom(it) } &&
+                        method.parameterTypes.any { KeyStroke::class.java.isAssignableFrom(it) }
             }.sortedBy { it.parameterCount }
         }
 
@@ -582,7 +588,11 @@ object IdeaVimFacade {
                 type.isAssignableFrom(stroke.javaClass) -> stroke
                 type.isAssignableFrom(dataContext.javaClass) -> dataContext
                 vimEditorClass != null && type.isAssignableFrom(vimEditorClass) -> createVimEditorWrapper(editor)
-                executionContextClass != null && type.isAssignableFrom(executionContextClass) -> createExecutionContextWrapper(editor, dataContext)
+                executionContextClass != null && type.isAssignableFrom(executionContextClass) -> createExecutionContextWrapper(
+                    editor,
+                    dataContext
+                )
+
                 type == java.lang.Boolean.TYPE || type == java.lang.Boolean::class.java -> java.lang.Boolean.FALSE
                 else -> return null
             }
@@ -591,7 +601,8 @@ object IdeaVimFacade {
     }
 
     private fun logHandleKeyFailure(handlerClass: Class<*>, method: Method?, throwable: Throwable?) {
-        val signature = method?.parameterTypes?.joinToString(prefix = "(", postfix = ")", separator = ",") { it.simpleName }
+        val signature =
+            method?.parameterTypes?.joinToString(prefix = "(", postfix = ")", separator = ",") { it.simpleName }
         val key = buildString {
             append(handlerClass.name)
             append('#')
@@ -604,7 +615,10 @@ object IdeaVimFacade {
         if (method == null) {
             logger.warn("No compatible IdeaVim handleKey method found on ${handlerClass.name}.")
         } else if (throwable != null) {
-            logger.warn("Failed to invoke IdeaVim handleKey via signature ${handlerClass.name}.${method.name}$signature.", throwable)
+            logger.warn(
+                "Failed to invoke IdeaVim handleKey via signature ${handlerClass.name}.${method.name}$signature.",
+                throwable
+            )
         }
     }
 
@@ -626,12 +640,30 @@ object IdeaVimFacade {
         val modifiers = deriveModifiers(character)
 
         if (keyCode != KeyEvent.VK_UNDEFINED) {
-            queue.postEvent(KeyEvent(component, KeyEvent.KEY_PRESSED, timestamp, modifiers, keyCode, KeyEvent.CHAR_UNDEFINED))
+            queue.postEvent(
+                KeyEvent(
+                    component,
+                    KeyEvent.KEY_PRESSED,
+                    timestamp,
+                    modifiers,
+                    keyCode,
+                    KeyEvent.CHAR_UNDEFINED
+                )
+            )
         }
         val typed = KeyEvent(component, KeyEvent.KEY_TYPED, timestamp, modifiers, KeyEvent.VK_UNDEFINED, character)
         queue.postEvent(typed)
         if (keyCode != KeyEvent.VK_UNDEFINED) {
-            queue.postEvent(KeyEvent(component, KeyEvent.KEY_RELEASED, timestamp, modifiers, keyCode, KeyEvent.CHAR_UNDEFINED))
+            queue.postEvent(
+                KeyEvent(
+                    component,
+                    KeyEvent.KEY_RELEASED,
+                    timestamp,
+                    modifiers,
+                    keyCode,
+                    KeyEvent.CHAR_UNDEFINED
+                )
+            )
         }
     }
 
@@ -643,6 +675,7 @@ object IdeaVimFacade {
             ':', '?', '+', '*', '"', '<', '>', '{', '}', '|', '_',
             '~', '^', '&', '%', '$', '#', '@', ')', '(', '!', '=',
             '{', '}', '\u00A7', '\u00B0' -> InputEvent.SHIFT_DOWN_MASK
+
             else -> 0
         }
     }
@@ -770,7 +803,10 @@ object IdeaVimFacade {
                     return instance
                 }
             } catch (throwable: Throwable) {
-                logger.debug("Failed to invoke constructor ${clazz.name}(${constructor.parameterTypes.joinToString { it.simpleName }})", throwable)
+                logger.debug(
+                    "Failed to invoke constructor ${clazz.name}(${constructor.parameterTypes.joinToString { it.simpleName }})",
+                    throwable
+                )
             }
         }
         return null
@@ -783,7 +819,9 @@ object IdeaVimFacade {
         val resolved = arrayOfNulls<Any>(parameterTypes.size)
         parameterTypes.forEachIndexed { index, parameterType ->
             val match = availableArgs.firstOrNull { candidate ->
-                parameterType.isInstance(candidate) || (parameterType.isPrimitive && wrapPrimitive(parameterType).isInstance(candidate))
+                parameterType.isInstance(candidate) || (parameterType.isPrimitive && wrapPrimitive(parameterType).isInstance(
+                    candidate
+                ))
             } ?: return null
             resolved[index] = if (parameterType.isPrimitive) {
                 unwrapPrimitive(parameterType, match)
@@ -817,6 +855,7 @@ object IdeaVimFacade {
             is Number -> value.toInt().toChar()
             else -> 0.toChar()
         }
+
         java.lang.Float.TYPE -> (value as? Number)?.toFloat() ?: 0f
         java.lang.Double.TYPE -> (value as? Number)?.toDouble() ?: 0.0
         else -> value
@@ -846,12 +885,19 @@ object IdeaVimFacade {
 
     private fun clearSearchHighlights(editor: Editor) {
         try {
-            searchHighlightsHelperClass?.getMethod("updateSearchHighlights", String::class.java, java.lang.Boolean.TYPE, java.lang.Boolean.TYPE, java.lang.Boolean.TYPE)
+            searchHighlightsHelperClass?.getMethod(
+                "updateSearchHighlights",
+                String::class.java,
+                java.lang.Boolean.TYPE,
+                java.lang.Boolean.TYPE,
+                java.lang.Boolean.TYPE
+            )
         } catch (_: Throwable) {
             // ignore, not the overload we need
         }
         try {
-            val removeMethod = searchHighlightsHelperClass?.getDeclaredMethod("removeSearchHighlights", Editor::class.java)
+            val removeMethod =
+                searchHighlightsHelperClass?.getDeclaredMethod("removeSearchHighlights", Editor::class.java)
             if (removeMethod != null) {
                 if (!removeMethod.canAccess(null)) {
                     removeMethod.isAccessible = true

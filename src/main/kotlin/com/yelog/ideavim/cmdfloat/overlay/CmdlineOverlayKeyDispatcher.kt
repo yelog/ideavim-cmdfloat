@@ -1,6 +1,5 @@
 package com.yelog.ideavim.cmdfloat.overlay
 
-import java.awt.Component
 import java.awt.KeyEventDispatcher
 import java.awt.event.KeyEvent
 

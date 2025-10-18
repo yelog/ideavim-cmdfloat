@@ -4,35 +4,21 @@ import com.intellij.icons.AllIcons
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.editor.colors.EditorColorsManager
 import com.intellij.openapi.editor.colors.EditorColorsScheme
-import com.yelog.ideavim.cmdfloat.overlay.OptionCommandCompletion
 import com.intellij.ui.CollectionListModel
 import com.intellij.ui.ColoredListCellRenderer
 import com.intellij.ui.JBColor
 import com.intellij.ui.SimpleTextAttributes
-import com.intellij.ui.components.JBLabel
-import com.intellij.ui.components.JBPanel
-import com.intellij.ui.components.JBScrollPane
-import com.intellij.ui.components.JBList
-import com.intellij.ui.components.JBTextField
+import com.intellij.ui.components.*
 import com.intellij.util.ui.JBFont
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import java.awt.Dimension
 import java.awt.Font
-import java.awt.Point
 import java.awt.event.ActionEvent
 import java.awt.event.HierarchyEvent
 import java.awt.event.HierarchyListener
-import java.util.Locale
-import javax.swing.AbstractAction
-import javax.swing.ActionMap
-import javax.swing.JComponent
-import javax.swing.JList
-import javax.swing.ListSelectionModel
-import javax.swing.InputMap
-import javax.swing.KeyStroke
-import javax.swing.SwingConstants
-import javax.swing.SwingUtilities
+import java.util.*
+import javax.swing.*
 import javax.swing.event.DocumentEvent
 import javax.swing.event.DocumentListener
 import kotlin.math.min
@@ -128,7 +114,9 @@ class CmdlineOverlayPanel(
             updateSearchResultIndicator(focusComponent.text)
         }
 
-        if (mode == OverlayMode.COMMAND && historySnapshot.isNotEmpty() && historySnapshot.firstOrNull()?.startsWith("<,'>") == true) {
+        if (mode == OverlayMode.COMMAND && historySnapshot.isNotEmpty() && historySnapshot.firstOrNull()
+                ?.startsWith("<,'>") == true
+        ) {
             // no-op
         }
     }
@@ -567,10 +555,12 @@ class CmdlineOverlayPanel(
                     index += 2
                     true
                 }
+
                 ch.isWhitespace() || ch.isDigit() || ch == '%' || ch == '$' || ch == '.' || ch == ',' || ch == ';' || ch == '-' || ch == '+' -> {
                     index += 1
                     true
                 }
+
                 else -> false
             }
         }
@@ -941,6 +931,7 @@ class CmdlineOverlayPanel(
                                 )
                             }
                         }
+
                         is SuggestionEntry.SearchWord -> {
                             appendWithHighlights(
                                 text = value.match.word,
@@ -949,6 +940,7 @@ class CmdlineOverlayPanel(
                                 highlightAttrs = highlightAttrs,
                             )
                         }
+
                         is SuggestionEntry.Action -> {
                             val highlightQuery = actionQueryText
                             val presentation = value.data.presentation
@@ -962,19 +954,26 @@ class CmdlineOverlayPanel(
                                 append("  ", SimpleTextAttributes.GRAYED_SMALL_ATTRIBUTES)
                                 appendWithHighlights(
                                     text = value.data.actionId,
-                                    highlightIndices = highlightIndicesForSubstring(value.data.actionId, highlightQuery),
+                                    highlightIndices = highlightIndicesForSubstring(
+                                        value.data.actionId,
+                                        highlightQuery
+                                    ),
                                     normalAttrs = SimpleTextAttributes.GRAY_ATTRIBUTES,
                                     highlightAttrs = highlightAttrs,
                                 )
                             } else {
                                 appendWithHighlights(
                                     text = value.data.actionId,
-                                    highlightIndices = highlightIndicesForSubstring(value.data.actionId, highlightQuery),
+                                    highlightIndices = highlightIndicesForSubstring(
+                                        value.data.actionId,
+                                        highlightQuery
+                                    ),
                                     normalAttrs = SimpleTextAttributes.REGULAR_ATTRIBUTES,
                                     highlightAttrs = highlightAttrs,
                                 )
                             }
                         }
+
                         is SuggestionEntry.Option -> {
                             val highlightQuery = optionQueryText
                             appendWithHighlights(
@@ -1166,7 +1165,8 @@ class CmdlineOverlayPanel(
                 return
             }
             val visibleRows = min(model.size, maxVisibleRows)
-            val rowHeight = list.fixedCellHeight.takeIf { it > 0 } ?: list.preferredSize.height.coerceAtLeast(JBUI.scale(20))
+            val rowHeight =
+                list.fixedCellHeight.takeIf { it > 0 } ?: list.preferredSize.height.coerceAtLeast(JBUI.scale(20))
             val parentWidth = parent.width.takeIf { it > 0 } ?: parent.preferredSize.width
             val width = parentWidth.coerceAtLeast(JBUI.scale(200))
             val height = visibleRows * rowHeight + JBUI.scale(4)
@@ -1294,12 +1294,15 @@ class CmdlineOverlayPanel(
                     val newValue = suggestion.context.prefix + suggestion.match.word + suggestion.context.suffix
                     setTextProgrammatically(textField, newValue)
                 }
+
                 is SuggestionEntry.ExCommand -> {
                     setTextProgrammatically(textField, suggestion.data.executionText)
                 }
+
                 is SuggestionEntry.Action -> {
                     setTextProgrammatically(textField, suggestion.prefix + suggestion.data.actionId)
                 }
+
                 is SuggestionEntry.Option -> {
                     setTextProgrammatically(textField, suggestion.prefix + suggestion.data.name)
                 }

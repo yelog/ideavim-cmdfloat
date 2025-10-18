@@ -1,13 +1,13 @@
 package com.yelog.ideavim.cmdfloat.services
 
+import com.intellij.openapi.Disposable
+import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.components.Service
+import com.intellij.openapi.diagnostic.Logger
+import com.intellij.openapi.project.Project
 import com.yelog.ideavim.cmdfloat.overlay.CmdlineOverlayKeyDispatcher
 import com.yelog.ideavim.cmdfloat.overlay.CmdlineOverlayManager
 import com.yelog.ideavim.cmdfloat.overlay.IdeaVimFacade
-import com.intellij.openapi.Disposable
-import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.diagnostic.Logger
-import com.intellij.openapi.project.Project
-import com.intellij.openapi.components.Service
 import java.awt.KeyboardFocusManager
 import java.lang.reflect.Modifier
 import java.util.concurrent.atomic.AtomicBoolean
