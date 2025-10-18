@@ -99,8 +99,7 @@ class CmdlineOverlayPanel(
         }
 
         val contentPanel = JBPanel<JBPanel<*>>(java.awt.BorderLayout()).apply {
-            isOpaque = true
-            background = scheme.toOverlayInputBackground()
+            isOpaque = false
             putClientProperty("JComponent.roundRect", java.lang.Boolean.TRUE)
 
             // 所有模式统一去除标题与边框，避免双重边框视觉重复
@@ -193,7 +192,6 @@ class CmdlineOverlayPanel(
         val inputHeight = JBUI.scale(28)
         return JBTextField().apply {
             border = JBUI.Borders.empty()
-            background = scheme.toOverlayInputBackground()
             foreground = scheme.defaultForeground ?: JBColor.foreground()
             caretColor = foreground
             font = JBFont.regular().deriveFont(Font.PLAIN, scaledFontSize(14f))
@@ -201,6 +199,7 @@ class CmdlineOverlayPanel(
             minimumSize = Dimension(JBUI.scale(200), inputHeight)
             margin = JBUI.insets(0, 1, 0, 6)
             putClientProperty("JComponent.roundRect", java.lang.Boolean.TRUE)
+            isOpaque = false
             focusTraversalKeysEnabled = false
             document.addDocumentListener(object : DocumentListener {
                 override fun insertUpdate(event: DocumentEvent) = handleDocumentChange(this@apply)
@@ -241,8 +240,7 @@ class CmdlineOverlayPanel(
             foreground = focusComponent.foreground
             font = JBFont.label().deriveFont(Font.BOLD, scaledFontSize(16f))
             preferredSize = Dimension(JBUI.scale(if (isSearchMode) 26 else 24), inputHeight)
-            isOpaque = true
-            background = focusComponent.background
+            isOpaque = false
         }
         if (isSearchMode) {
             label.icon = AllIcons.Actions.Search
