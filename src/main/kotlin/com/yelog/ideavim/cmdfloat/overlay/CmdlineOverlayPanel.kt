@@ -4,8 +4,6 @@ import com.intellij.icons.AllIcons
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.editor.colors.EditorColorsManager
 import com.intellij.openapi.editor.colors.EditorColorsScheme
-import com.intellij.openapi.ui.popup.JBPopup
-import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.yelog.ideavim.cmdfloat.overlay.OptionCommandCompletion
 import com.intellij.ui.CollectionListModel
 import com.intellij.ui.ColoredListCellRenderer
@@ -16,7 +14,6 @@ import com.intellij.ui.components.JBPanel
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBList
 import com.intellij.ui.components.JBTextField
-import com.intellij.ui.awt.RelativePoint
 import com.intellij.util.ui.JBFont
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
@@ -35,6 +32,7 @@ import javax.swing.ListSelectionModel
 import javax.swing.InputMap
 import javax.swing.KeyStroke
 import javax.swing.SwingConstants
+import javax.swing.SwingUtilities
 import javax.swing.event.DocumentEvent
 import javax.swing.event.DocumentListener
 import kotlin.math.min
@@ -66,6 +64,7 @@ class CmdlineOverlayPanel(
     private var preferredWidth = JBUI.scale(400)
     private val basePreferredHeight: Int
     private var searchCommitted = false
+    private var suggestionsHeight: Int? = null
     private var searchCancelled = false
     private var searchInitialCaretOffset: Int = -1
     private var commandPreviewActive = false
@@ -166,12 +165,24 @@ class CmdlineOverlayPanel(
     }
 
     private fun applyPreferredSize() {
-        component.preferredSize = Dimension(preferredWidth, basePreferredHeight)
+        val totalHeight = basePreferredHeight + (suggestionsHeight ?: 0)
+        component.preferredSize = Dimension(preferredWidth, totalHeight)
         component.revalidate()
         component.repaint()
-        component.parent?.revalidate()
-        component.parent?.repaint()
+        SwingUtilities.getWindowAncestor(component)?.let { win ->
+            win.pack()
+            if (win.width != preferredWidth) {
+                win.setSize(preferredWidth, win.height)
+            }
+        }
     }
+
+    private fun adjustSuggestionsHeight(suggestionsHeight: Int?) {
+        this.suggestionsHeight = suggestionsHeight
+        applyPreferredSize()
+    }
+
+    // 已通过 applyPreferredSize 调整并 pack popup，无需单独 resize 方法
 
     private fun handleDocumentChange(textField: JBTextField) {
         if (programmaticUpdate) {
@@ -640,7 +651,7 @@ class CmdlineOverlayPanel(
             selectionMode = ListSelectionModel.SINGLE_SELECTION
             fixedCellHeight = JBUI.scale(20)
             border = JBUI.Borders.empty(0, 6, 0, 6)
-            background = textField.background
+            isOpaque = false
             foreground = textField.foreground
             putClientProperty("JComponent.roundRect", java.lang.Boolean.TRUE)
             cellRenderer = object : ColoredListCellRenderer<SearchMatchCandidate>() {
@@ -675,12 +686,10 @@ class CmdlineOverlayPanel(
             viewport.isOpaque = false
             horizontalScrollBarPolicy = JBScrollPane.HORIZONTAL_SCROLLBAR_NEVER
             verticalScrollBar.unitIncrement = JBUI.scale(12)
-            background = scheme.toOverlayInputBackground()
         }
 
         private val maxVisibleRows = 8
         private val maxSuggestions = 50
-        private var popup: JBPopup? = null
         private var parentComponent: JComponent? = null
         private var currentHeight: Int = JBUI.scale(80)
 
@@ -741,15 +750,14 @@ class CmdlineOverlayPanel(
                 }
                 model.replaceAll(matches)
             }
-            if (model.isEmpty) {
-                dispose()
+            val parent = parentComponent
+            if (model.isEmpty || parent == null) {
+                removeFromParent()
                 return
             }
             val visibleRows = min(model.size, maxVisibleRows)
             val rowHeight = list.fixedCellHeight.takeIf { it > 0 }
                 ?: list.preferredSize.height.coerceAtLeast(JBUI.scale(20))
-            val parent = parentComponent ?: return dispose()
-
             val parentWidth = parent.width.takeIf { it > 0 } ?: parent.preferredSize.width
             val width = parentWidth.coerceAtLeast(JBUI.scale(200))
             val height = visibleRows * rowHeight + JBUI.scale(4)
@@ -758,16 +766,17 @@ class CmdlineOverlayPanel(
             scrollPane.preferredSize = size
             scrollPane.minimumSize = size
             scrollPane.maximumSize = size
-
-            val popup = ensurePopup()
-            popup.setSize(size)
-            popup.setLocation(RelativePoint(parent, Point(0, parent.height)).screenPoint)
+            if (scrollPane.parent == null) {
+                parent.add(scrollPane, java.awt.BorderLayout.SOUTH)
+            }
             val selectedIndex = list.selectedIndex
             if (selectedIndex >= 0) {
                 list.ensureIndexIsVisible(selectedIndex)
             }
-            scrollPane.revalidate()
-            scrollPane.repaint()
+            parent.revalidate()
+            parent.repaint()
+            adjustSuggestionsHeight(height)
+            adjustSuggestionsHeight(height)
         }
 
         override fun moveSelection(previous: Boolean): Boolean {
@@ -823,53 +832,35 @@ class CmdlineOverlayPanel(
         }
 
         override fun updatePopupWidth(width: Int) {
-            val popup = popup ?: return
-            if (popup.isDisposed) {
-                return
-            }
+            if (scrollPane.parent == null) return
             val size = Dimension(width, currentHeight)
-            popup.setSize(size)
             scrollPane.preferredSize = size
             scrollPane.minimumSize = size
             scrollPane.maximumSize = size
-            parentComponent?.let {
-                popup.setLocation(RelativePoint(it, Point(0, it.height)).screenPoint)
-            }
+            scrollPane.parent.revalidate()
+            scrollPane.parent.repaint()
         }
 
         override fun dispose() {
             suppressSelection {
-                popup?.cancel()
-                popup = null
                 model.replaceAll(emptyList())
                 list.clearSelection()
             }
+            removeFromParent()
             selectionBaseText = null
+            adjustSuggestionsHeight(null)
         }
 
-        private fun ensurePopup(): JBPopup {
-            var current = popup
-            if (current == null || current.isDisposed) {
-                current = JBPopupFactory.getInstance()
-                    .createComponentPopupBuilder(scrollPane, list)
-                    .setFocusable(false)
-                    .setRequestFocus(false)
-                    .setCancelKeyEnabled(false)
-                    .setCancelOnClickOutside(false)
-                    .setCancelOnOtherWindowOpen(true)
-                    .setCancelOnWindowDeactivation(true)
-                    .setMovable(false)
-                    .setResizable(false)
-                    .createPopup()
-                popup = current
-                parentComponent?.let {
-                    current.show(RelativePoint(it, Point(0, it.height)))
-                }
-            }
-            return current
+        private fun removeFromParent() {
+            val parent = scrollPane.parent ?: return
+            parent.remove(scrollPane)
+            parent.revalidate()
+            parent.repaint()
         }
 
-        private fun isActive(): Boolean = popup?.let { !it.isDisposed && model.size > 0 } == true
+        // 移除独立 Popup 逻辑，改为嵌入主悬浮框
+
+        private fun isActive(): Boolean = (model.size > 0 && scrollPane.parent != null)
 
         private fun restoreSelectionBase() {
             val base = selectionBaseText ?: return
@@ -903,7 +894,7 @@ class CmdlineOverlayPanel(
             selectionMode = ListSelectionModel.SINGLE_SELECTION
             fixedCellHeight = JBUI.scale(20)
             border = JBUI.Borders.empty(0, 6, 0, 6)
-            background = textField.background
+            isOpaque = false
             foreground = textField.foreground
             putClientProperty("JComponent.roundRect", java.lang.Boolean.TRUE)
             cellRenderer = object : ColoredListCellRenderer<SuggestionEntry>() {
@@ -1009,12 +1000,10 @@ class CmdlineOverlayPanel(
             viewport.isOpaque = false
             horizontalScrollBarPolicy = JBScrollPane.HORIZONTAL_SCROLLBAR_NEVER
             verticalScrollBar.unitIncrement = JBUI.scale(12)
-            background = scheme.toOverlayInputBackground()
         }
 
         private val maxVisibleRows = 8
         private val maxSearchSuggestions = 50
-        private var popup: JBPopup? = null
         private var parentComponent: JComponent? = null
         private var currentHeight: Int = JBUI.scale(80)
 
@@ -1157,14 +1146,14 @@ class CmdlineOverlayPanel(
                     list.clearSelection()
                 }
             }
-            if (model.isEmpty) {
-                dispose()
+            val parent = parentComponent
+            if (model.isEmpty || parent == null) {
+                removeFromParent()
+                adjustSuggestionsHeight(null)
                 return
             }
             val visibleRows = min(model.size, maxVisibleRows)
             val rowHeight = list.fixedCellHeight.takeIf { it > 0 } ?: list.preferredSize.height.coerceAtLeast(JBUI.scale(20))
-            val parent = parentComponent ?: return dispose()
-
             val parentWidth = parent.width.takeIf { it > 0 } ?: parent.preferredSize.width
             val width = parentWidth.coerceAtLeast(JBUI.scale(200))
             val height = visibleRows * rowHeight + JBUI.scale(4)
@@ -1173,52 +1162,37 @@ class CmdlineOverlayPanel(
             scrollPane.preferredSize = size
             scrollPane.minimumSize = size
             scrollPane.maximumSize = size
-
-            val popup = ensurePopup()
-            popup.setSize(size)
-            popup.setLocation(
-                RelativePoint(parent, Point(0, parent.height)).screenPoint
-            )
+            if (scrollPane.parent == null) {
+                parent.add(scrollPane, java.awt.BorderLayout.SOUTH)
+            }
             val selectedIndex = list.selectedIndex
             if (selectedIndex >= 0) {
                 list.ensureIndexIsVisible(selectedIndex)
             }
-            scrollPane.revalidate()
-            scrollPane.repaint()
+            parent.revalidate()
+            parent.repaint()
+            adjustSuggestionsHeight(height)
         }
 
-        private fun isActive(): Boolean = popup?.let { !it.isDisposed && model.size > 0 } == true
+        private fun isActive(): Boolean = (model.size > 0 && scrollPane.parent != null)
 
-        private fun ensurePopup(): JBPopup {
-            var current = popup
-            if (current == null || current.isDisposed) {
-                current = JBPopupFactory.getInstance()
-                    .createComponentPopupBuilder(scrollPane, list)
-                    .setFocusable(false)
-                    .setRequestFocus(false)
-                    .setCancelKeyEnabled(false)
-                    .setCancelOnClickOutside(false)
-                    .setCancelOnOtherWindowOpen(true)
-                    .setCancelOnWindowDeactivation(true)
-                    .setMovable(false)
-                    .setResizable(false)
-                    .createPopup()
-                popup = current
-                parentComponent?.let {
-                    current.show(RelativePoint(it, Point(0, it.height)))
-                }
-            }
-            return current
-        }
+        // 移除独立 Popup 逻辑，改为嵌入主悬浮框
 
         override fun dispose() {
             suppressSelection {
-                popup?.cancel()
-                popup = null
                 model.replaceAll(emptyList())
                 list.clearSelection()
             }
+            removeFromParent()
             selectionBaseText = null
+            adjustSuggestionsHeight(null)
+        }
+
+        private fun removeFromParent() {
+            val parent = scrollPane.parent ?: return
+            parent.remove(scrollPane)
+            parent.revalidate()
+            parent.repaint()
         }
 
         private fun parseSubstitutionSearchQuery(content: String): SubstitutionQuery? {
@@ -1384,18 +1358,13 @@ class CmdlineOverlayPanel(
         }
 
         override fun updatePopupWidth(width: Int) {
-            val popup = popup ?: return
-            if (popup.isDisposed) {
-                return
-            }
+            if (scrollPane.parent == null) return
             val size = Dimension(width, currentHeight)
-            popup.setSize(size)
             scrollPane.preferredSize = size
             scrollPane.minimumSize = size
             scrollPane.maximumSize = size
-            parentComponent?.let {
-                popup.setLocation(RelativePoint(it, Point(0, it.height)).screenPoint)
-            }
+            scrollPane.parent.revalidate()
+            scrollPane.parent.repaint()
         }
 
         private fun parseActionQuery(content: String): ActionQuery? {
@@ -1457,7 +1426,8 @@ class CmdlineOverlayPanel(
 
 private val SEARCH_HIGHLIGHT_ATTRIBUTES = SimpleTextAttributes(
     SimpleTextAttributes.STYLE_BOLD,
-    JBColor.namedColor("BetterCmd.Highlight.foreground", JBColor(0x0F7AF5, 0x62AFFF)),
+    // 使用与 Search Everywhere / Goto 类似的主题前景色（可随主题变化），提供更原生的匹配高亮体验
+    JBColor.namedColor("SearchEverywhere.matchesForeground", JBColor(0x0F7AF5, 0x62AFFF)),
 )
 
 private val SEARCH_RESULT_NEUTRAL_COLOR = JBColor.namedColor("Label.infoForeground", JBColor(0x9397A1, 0x6D737D))
