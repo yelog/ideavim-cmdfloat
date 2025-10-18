@@ -6,6 +6,7 @@
 
 - fix: Floating window style simplified, uses theme colors, compatible with theme switching
 - fix: Floating window and completion list use the same popup layer, expanded when needed
+- ci: Add plugin icon
 
 ## 0.0.2
 

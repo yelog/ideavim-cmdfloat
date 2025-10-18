@@ -32,6 +32,7 @@ https://plugins.jetbrains.com/docs/intellij/plugin-configuration-file.html -->
         <ul>
         <li>fix: Floating window style simplified, uses theme colors, compatible with theme switching</li>
         <li>fix: Floating window and completion list use the same popup layer, expanded when needed</li>
+        <li>ci: Add plugin icon</li>
         </ul>
         <h2>0.0.2</h2>
         <ul>
