@@ -104,7 +104,7 @@ class CmdlineOverlayPanel(
             // 所有模式统一去除标题与边框，避免双重边框视觉重复
             border = JBUI.Borders.empty(2, 0, 2, 0)
 
-            add(inputPanel, java.awt.BorderLayout.CENTER)
+            add(inputPanel, java.awt.BorderLayout.NORTH)
             suggestionSupport?.install(this)
         }
 
@@ -682,7 +682,11 @@ class CmdlineOverlayPanel(
 
         private val scrollPane = JBScrollPane(list).apply {
             isOpaque = false
-            border = JBUI.Borders.empty(2, 0, 4, 0)
+            val lineColor = JBColor.namedColor("Popup.separatorColor", JBColor(0xD0D3D9, 0x4B4F55))
+            border = JBUI.Borders.compound(
+                JBUI.Borders.customLine(lineColor, 1, 0, 0, 0),
+                JBUI.Borders.empty(1, 0, 3, 0),
+            )
             viewport.isOpaque = false
             horizontalScrollBarPolicy = JBScrollPane.HORIZONTAL_SCROLLBAR_NEVER
             verticalScrollBar.unitIncrement = JBUI.scale(12)
@@ -776,7 +780,6 @@ class CmdlineOverlayPanel(
             parent.revalidate()
             parent.repaint()
             adjustSuggestionsHeight(height)
-            adjustSuggestionsHeight(height)
         }
 
         override fun moveSelection(previous: Boolean): Boolean {
@@ -852,11 +855,14 @@ class CmdlineOverlayPanel(
         }
 
         private fun removeFromParent() {
-            val parent = scrollPane.parent ?: return
-            parent.remove(scrollPane)
-            parent.revalidate()
-            parent.repaint()
+            val parent = scrollPane.parent
+            if (parent != null) {
+                parent.remove(scrollPane)
+            }
+            parent?.revalidate()
+            parent?.repaint()
         }
+
 
         // 移除独立 Popup 逻辑，改为嵌入主悬浮框
 
@@ -996,7 +1002,11 @@ class CmdlineOverlayPanel(
 
         private val scrollPane = JBScrollPane(list).apply {
             isOpaque = false
-            border = JBUI.Borders.empty(2, 0, 4, 0)
+            val lineColor = JBColor.namedColor("Popup.separatorColor", JBColor(0xD0D3D9, 0x4B4F55))
+            border = JBUI.Borders.compound(
+                JBUI.Borders.customLine(lineColor, 1, 0, 0, 0),
+                JBUI.Borders.empty(1, 0, 3, 0),
+            )
             viewport.isOpaque = false
             horizontalScrollBarPolicy = JBScrollPane.HORIZONTAL_SCROLLBAR_NEVER
             verticalScrollBar.unitIncrement = JBUI.scale(12)
@@ -1189,11 +1199,14 @@ class CmdlineOverlayPanel(
         }
 
         private fun removeFromParent() {
-            val parent = scrollPane.parent ?: return
-            parent.remove(scrollPane)
-            parent.revalidate()
-            parent.repaint()
+            val parent = scrollPane.parent
+            if (parent != null) {
+                parent.remove(scrollPane)
+            }
+            parent?.revalidate()
+            parent?.repaint()
         }
+
 
         private fun parseSubstitutionSearchQuery(content: String): SubstitutionQuery? {
             if (content.isEmpty()) {
