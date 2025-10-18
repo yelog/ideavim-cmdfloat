@@ -1,10 +1,10 @@
 <!-- Plugin Configuration File. Read more:
 https://plugins.jetbrains.com/docs/intellij/plugin-configuration-file.html -->
 <idea-plugin>
-  <id>com.yelog.ideavim.cmdfloat</id>
-  <name>CmdFloat</name>
-  <vendor>yelog</vendor>
-  <description><![CDATA[
+    <id>com.yelog.ideavim.cmdfloat</id>
+    <name>CmdFloat</name>
+    <vendor>yelog</vendor>
+    <description><![CDATA[
     <p><code>CmdFloat</code> is a modern command-line overlay for IdeaVim users that makes `:`, `/`, and `?` feel quicker and easier to use.</p>
     <h2>Key Features</h2>
     <ul>
@@ -17,17 +17,22 @@ https://plugins.jetbrains.com/docs/intellij/plugin-configuration-file.html -->
     </ul>
     ]]></description>
 
-  <depends>com.intellij.modules.platform</depends>
-  <depends>IdeaVIM</depends>
+    <depends>com.intellij.modules.platform</depends>
+    <depends>IdeaVIM</depends>
 
-  <resource-bundle>messages.MyBundle</resource-bundle>
+    <resource-bundle>messages.MyBundle</resource-bundle>
 
-  <extensions defaultExtensionNs="com.intellij">
-    <postStartupActivity
-      implementation="com.yelog.ideavim.cmdfloat.startup.CmdlineOverlayStartupActivity" />
-  </extensions>
+    <extensions defaultExtensionNs="com.intellij">
+        <postStartupActivity
+                implementation="com.yelog.ideavim.cmdfloat.startup.CmdlineOverlayStartupActivity"/>
+    </extensions>
 
-  <change-notes><![CDATA[
+    <change-notes><![CDATA[
+        <h2>0.0.3</h2>
+        <ul>
+        <li>fix: Floating window style simplified, uses theme colors, compatible with theme switching</li>
+        <li>fix: Floating window and completion list use the same popup layer, expanded when needed</li>
+        </ul>
         <h2>0.0.2</h2>
         <ul>
         <li>fix: Incorrect triggering of Search/CmdLine when executing operations such as <code>r:</code>, <code>f:</code>, <code>T/</code>, etc.</li>

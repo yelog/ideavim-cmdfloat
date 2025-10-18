@@ -2,6 +2,11 @@
 
 # IdeaVim-CmdFloat Changelog
 
+## 0.0.3
+
+- fix: Floating window style simplified, uses theme colors, compatible with theme switching
+- fix: Floating window and completion list use the same popup layer, expanded when needed
+
 ## 0.0.2
 
 - fix: Incorrect triggering of Search/CmdLine when executing operations such as `r:`, `f:`, `T/`, etc.
