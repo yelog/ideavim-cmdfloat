@@ -669,7 +669,7 @@ class CmdlineOverlayPanel(
                         text = value.word,
                         highlightIndices = value.positions,
                         normalAttrs = SimpleTextAttributes.REGULAR_ATTRIBUTES,
-                        highlightAttrs = SEARCH_HIGHLIGHT_ATTRIBUTES,
+                        highlightAttrs = currentSearchHighlightAttributes(),
                     )
                 }
             }
@@ -908,7 +908,7 @@ class CmdlineOverlayPanel(
                     if (value == null) {
                         return
                     }
-                    val highlightAttrs = SEARCH_HIGHLIGHT_ATTRIBUTES
+                    val highlightAttrs = currentSearchHighlightAttributes()
                     val actionQueryText = this@CommandSuggestionSupport.currentActionQuery?.query
                     val optionQueryText = this@CommandSuggestionSupport.currentOptionQuery?.query
                     val exQueryText = this@CommandSuggestionSupport.currentExQuery
@@ -1424,11 +1424,13 @@ class CmdlineOverlayPanel(
     )
 }
 
-private val SEARCH_HIGHLIGHT_ATTRIBUTES = SimpleTextAttributes(
-    SimpleTextAttributes.STYLE_BOLD,
-    // 使用与 Search Everywhere / Goto 类似的主题前景色（可随主题变化），提供更原生的匹配高亮体验
-    JBColor.namedColor("SearchEverywhere.matchesForeground", JBColor(0x0F7AF5, 0x62AFFF)),
-)
+private fun currentSearchHighlightAttributes(): SimpleTextAttributes {
+    // 使用 SearchMatch 命名颜色 + STYLE_SEARCH_MATCH 实现与 Find in Files 一致的圆角“药丸”高亮
+    val bg = JBColor.namedColor("SearchMatch.startBackground", JBColor(0xFFF59D, 0x4D3B00))
+    val fg = JBColor.namedColor("SearchMatch.startForeground", JBColor(0x000000, 0x000000))
+    // 组合圆角搜索匹配样式与加粗样式
+    return SimpleTextAttributes(bg, fg, null, SimpleTextAttributes.STYLE_SEARCH_MATCH or SimpleTextAttributes.STYLE_BOLD)
+}
 
 private val SEARCH_RESULT_NEUTRAL_COLOR = JBColor.namedColor("Label.infoForeground", JBColor(0x9397A1, 0x6D737D))
 private val SEARCH_RESULT_ACTIVE_COLOR = JBColor.namedColor("Link.activeForeground", JBColor(0x0A84FF, 0x4C8DFF))
