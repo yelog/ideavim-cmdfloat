@@ -1441,11 +1441,10 @@ class CmdlineOverlayPanel(
 }
 
 private fun currentSearchHighlightAttributes(): SimpleTextAttributes {
-    // 使用 SearchMatch 命名颜色 + STYLE_SEARCH_MATCH 实现与 Find in Files 一致的圆角“药丸”高亮
+    // 使用 SearchMatch 命名颜色，仅保留圆角“药丸”样式，不再加粗
     val bg = JBColor.namedColor("SearchMatch.startBackground", JBColor(0xFFF59D, 0x4D3B00))
     val fg = JBColor.namedColor("SearchMatch.startForeground", JBColor(0x000000, 0x000000))
-    // 组合圆角搜索匹配样式与加粗样式
-    return SimpleTextAttributes(bg, fg, null, SimpleTextAttributes.STYLE_SEARCH_MATCH or SimpleTextAttributes.STYLE_BOLD)
+    return SimpleTextAttributes(bg, fg, null, SimpleTextAttributes.STYLE_SEARCH_MATCH)
 }
 
 private val SEARCH_RESULT_NEUTRAL_COLOR = JBColor.namedColor("Label.infoForeground", JBColor(0x9397A1, 0x6D737D))
