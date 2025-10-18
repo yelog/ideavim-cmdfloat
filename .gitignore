@@ -6,3 +6,4 @@
 .kotlin
 .qodana
 build
+.aider*

@@ -19,6 +19,7 @@ import com.intellij.ui.components.JBTextField
 import com.intellij.ui.awt.RelativePoint
 import com.intellij.util.ui.JBFont
 import com.intellij.util.ui.JBUI
+import com.intellij.util.ui.UIUtil
 import java.awt.Dimension
 import java.awt.Font
 import java.awt.Point
@@ -36,8 +37,6 @@ import javax.swing.KeyStroke
 import javax.swing.SwingConstants
 import javax.swing.event.DocumentEvent
 import javax.swing.event.DocumentListener
-import javax.swing.border.TitledBorder
-import javax.swing.BorderFactory
 import kotlin.math.min
 
 class CmdlineOverlayPanel(
@@ -104,19 +103,8 @@ class CmdlineOverlayPanel(
             background = scheme.toOverlayInputBackground()
             putClientProperty("JComponent.roundRect", java.lang.Boolean.TRUE)
 
-            val titleBorder = BorderFactory.createTitledBorder(
-                JBUI.Borders.customLine(scheme.toOverlayBorder(), 1),
-                mode.header,
-                TitledBorder.CENTER,
-                TitledBorder.TOP,
-                JBFont.label().deriveFont(Font.BOLD),
-                focusComponent.foreground
-            )
-
-            border = JBUI.Borders.compound(
-                titleBorder,
-                JBUI.Borders.empty(2, 0, 2, 0)
-            )
+            // 所有模式统一去除标题与边框，避免双重边框视觉重复
+            border = JBUI.Borders.empty(2, 0, 2, 0)
 
             add(inputPanel, java.awt.BorderLayout.CENTER)
             suggestionSupport?.install(this)
@@ -484,7 +472,8 @@ class CmdlineOverlayPanel(
     }
 
     private fun EditorColorsScheme.toOverlayInputBackground(): JBColor {
-        return JBColor.namedColor("TextField.background", JBColor(0xFFFFFF, 0x3B3F45))
+        // 改为使用系统默认 Popup 背景色，跟随主题（参考原生 Goto File 等弹窗）
+        return JBColor.namedColor("Popup.background", UIUtil.getPanelBackground())
     }
 
     private fun EditorColorsScheme.toOverlayBorder(): JBColor {
