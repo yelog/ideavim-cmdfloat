@@ -256,7 +256,8 @@ class CmdlineOverlayPanel(
         if (isSearchMode) {
             label.icon = AllIcons.Actions.Search
         } else {
-            label.text = ">"
+            // 使用更直观的控制台图标替换原来的 ">" 文本，提升视觉辨识度
+            label.icon = AllIcons.Nodes.Console
         }
         return label
     }
