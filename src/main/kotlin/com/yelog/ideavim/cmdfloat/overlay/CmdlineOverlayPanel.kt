@@ -256,8 +256,10 @@ class CmdlineOverlayPanel(
         if (isSearchMode) {
             label.icon = AllIcons.Actions.Search
         } else {
-            // 使用更直观的控制台图标替换原来的 ">" 文本，提升视觉辨识度
-            label.icon = AllIcons.Nodes.Console
+            // 使用 FontAwesome 私有区字符 U+F054（），若当前字体不可显示则回退到通用箭头 ❯
+            val promptChar = '\uF054'
+            label.text = if (label.font.canDisplay(promptChar)) promptChar.toString() else "❯"
+            label.toolTipText = "命令输入"
         }
         return label
     }
