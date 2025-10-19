@@ -2,6 +2,10 @@
 
 # IdeaVim-CmdFloat Changelog
 
+## 0.0.4
+
+- feat: Support highlighting in the search suggestion list
+
 ## 0.0.3
 
 - fix: Floating window style simplified, uses theme colors, compatible with theme switching

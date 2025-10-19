@@ -28,6 +28,10 @@ https://plugins.jetbrains.com/docs/intellij/plugin-configuration-file.html -->
     </extensions>
 
     <change-notes><![CDATA[
+        <h2>0.0.4</h2>
+        <ul>
+        <li>feat: Support highlighting in the search suggestion list</li>
+        </ul>
         <h2>0.0.3</h2>
         <ul>
         <li>fix: Floating window style simplified, uses theme colors, compatible with theme switching</li>
