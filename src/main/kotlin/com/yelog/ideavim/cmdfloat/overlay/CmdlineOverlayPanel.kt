@@ -14,6 +14,9 @@ import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import java.awt.Dimension
 import java.awt.Font
+import java.awt.Component
+import java.awt.Graphics
+import java.awt.Graphics2D
 import java.awt.event.ActionEvent
 import java.awt.event.HierarchyEvent
 import java.awt.event.HierarchyListener
@@ -196,7 +199,7 @@ class CmdlineOverlayPanel(
             font = JBFont.regular().deriveFont(Font.PLAIN, scaledFontSize(14f))
             preferredSize = Dimension(JBUI.scale(200), inputHeight)
             minimumSize = Dimension(JBUI.scale(200), inputHeight)
-            margin = JBUI.insets(0, 1, 0, 6)
+            margin = JBUI.emptyInsets()
             putClientProperty("JComponent.roundRect", java.lang.Boolean.TRUE)
             isOpaque = false
             focusTraversalKeysEnabled = false
@@ -235,14 +238,32 @@ class CmdlineOverlayPanel(
         val isSearchMode = mode == OverlayMode.SEARCH_FORWARD || mode == OverlayMode.SEARCH_BACKWARD
         val inputHeight = JBUI.scale(28)
         val label = JBLabel().apply {
-            border = JBUI.Borders.empty(0, 6, 0, 0)
+            // 搜索模式：左右都加内边距，防止组合图标（放大镜+箭头）被裁剪
+            // 之前右侧无内边距且总宽度仅 34，会因为 border 占用导致箭头显示不全
+            val left = if (isSearchMode) 4 else 6
+            val right = if (isSearchMode) 0 else 0
+            border = JBUI.Borders.empty(0, left, 0, right)
             foreground = focusComponent.foreground
             font = JBFont.label().deriveFont(Font.BOLD, scaledFontSize(16f))
-            preferredSize = Dimension(JBUI.scale(if (isSearchMode) 26 else 24), inputHeight)
+            // 动态计算搜索模式前缀宽度：放大镜实际宽度 + gap(=1 scaled) + 箭头宽度 + 左右内边距
+            // 避免额外的空白把文本框光标推远
+            if (isSearchMode) {
+                val searchIconWidth = AllIcons.Actions.Search.iconWidth
+                val gap = JBUI.scale(1)
+                val arrowWidth = JBUI.scale(8) // 与 createSearchDirectionIcon 中保持一致
+                val labelWidth = searchIconWidth + gap + arrowWidth + left + right
+                preferredSize = Dimension(JBUI.scale(labelWidth), inputHeight)
+            } else {
+                preferredSize = Dimension(JBUI.scale(24), inputHeight)
+            }
             isOpaque = false
         }
         if (isSearchMode) {
-            label.icon = AllIcons.Actions.Search
+            label.icon = when (mode) {
+                OverlayMode.SEARCH_FORWARD -> createSearchDirectionIcon(backward = false)
+                OverlayMode.SEARCH_BACKWARD -> createSearchDirectionIcon(backward = true)
+                else -> AllIcons.Actions.Search
+            }
         } else {
             // 调整命令模式前缀符号的位置：进一步右移以与搜索图标视觉对齐
             val promptChar = '\uF054'
@@ -253,6 +274,88 @@ class CmdlineOverlayPanel(
             label.preferredSize = Dimension(JBUI.scale(26), inputHeight)
         }
         return label
+    }
+
+    /**
+     * 创建搜索方向图标：放大镜 + 上/下小箭头（区分 / 与 ?）
+     * backward = false 表示正向搜索 (/)，显示向下箭头；backward = true 表示反向搜索 (?)，显示向上箭头。
+     */
+    private fun createSearchDirectionIcon(backward: Boolean): Icon {
+        val search = AllIcons.Actions.Search
+        // 自绘带“竖线”的箭头，以区分方向（/ 下箭头，? 上箭头）
+        val gap = JBUI.scale(1)
+        // 采用更窄的箭头尺寸（细线条，缩小与输入框的间距）
+        val arrowWidth = JBUI.scale(8)
+        val arrowHeight = JBUI.scale(9)
+        val width = search.iconWidth + gap + arrowWidth
+        val height = maxOf(search.iconHeight, arrowHeight)
+
+        return object : Icon {
+            override fun getIconWidth(): Int = width
+            override fun getIconHeight(): Int = height
+            override fun paintIcon(c: Component?, g: Graphics?, x: Int, y: Int) {
+                val g2 = g as? Graphics2D ?: return
+                // 抗锯齿
+                g2.setRenderingHint(
+                    java.awt.RenderingHints.KEY_ANTIALIASING,
+                    java.awt.RenderingHints.VALUE_ANTIALIAS_ON
+                )
+                // 绘制放大镜图标
+                val searchY = y + (height - search.iconHeight) / 2
+                search.paintIcon(c, g2, x, searchY)
+
+                // 箭头区域起点
+                val arrowX = x + search.iconWidth + gap
+                val arrowCenterY = y + height / 2
+                val arrowTop = arrowCenterY - arrowHeight / 2
+                val arrowBottom = arrowTop + arrowHeight
+                // 竖线改为更细 (1px)
+                val shaftWidth = JBUI.scale(1)
+                val shaftX = arrowX + (arrowWidth - shaftWidth) / 2
+                val shaftTop: Int
+                val shaftBottom: Int
+
+                g2.color = UIUtil.getLabelForeground()
+
+                if (backward) {
+                    // 上箭头：三角在上，竖线在下（细线条版本）
+                    val triangleHeight = JBUI.scale(4)
+                    val triangleTop = arrowTop
+                    val triangleBottom = triangleTop + triangleHeight
+                    val midX = arrowX + arrowWidth / 2
+
+                    // 三角
+                    val poly = java.awt.Polygon()
+                    poly.addPoint(midX, triangleTop)
+                    poly.addPoint(arrowX, triangleBottom)
+                    poly.addPoint(arrowX + arrowWidth - 1, triangleBottom)
+                    g2.fillPolygon(poly)
+
+                    // 竖线
+                    shaftTop = triangleBottom
+                    shaftBottom = arrowBottom
+                    g2.fillRect(shaftX, shaftTop, shaftWidth, shaftBottom - shaftTop)
+                } else {
+                    // 下箭头：竖线在上，三角在下（细线条版本）
+                    val triangleHeight = JBUI.scale(4)
+                    val triangleBottom = arrowBottom
+                    val triangleTop = triangleBottom - triangleHeight
+                    val midX = arrowX + arrowWidth / 2
+
+                    // 竖线
+                    shaftTop = arrowTop
+                    shaftBottom = triangleTop
+                    g2.fillRect(shaftX, shaftTop, shaftWidth, shaftBottom - shaftTop)
+
+                    // 三角
+                    val poly = java.awt.Polygon()
+                    poly.addPoint(midX, triangleBottom)
+                    poly.addPoint(arrowX, triangleTop)
+                    poly.addPoint(arrowX + arrowWidth - 1, triangleTop)
+                    g2.fillPolygon(poly)
+                }
+            }
+        }
     }
 
     private fun installActions(textField: JBTextField) {
