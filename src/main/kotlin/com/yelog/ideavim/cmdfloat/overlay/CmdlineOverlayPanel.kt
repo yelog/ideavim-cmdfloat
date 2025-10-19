@@ -12,9 +12,9 @@ import com.intellij.ui.components.*
 import com.intellij.util.ui.JBFont
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
+import java.awt.Component
 import java.awt.Dimension
 import java.awt.Font
-import java.awt.Component
 import java.awt.Graphics
 import java.awt.Graphics2D
 import java.awt.event.ActionEvent
@@ -30,7 +30,7 @@ class CmdlineOverlayPanel(
     private val mode: OverlayMode,
     history: CommandHistory,
     private val editor: Editor,
-    private val searchCandidates: List<String> = emptyList(),
+    private val searchCandidates: List<SearchCandidateWord> = emptyList(),
 ) {
 
     val component: JComponent
@@ -64,10 +64,9 @@ class CmdlineOverlayPanel(
         focusComponent = createTextField(scheme)
         searchResultLabel = if (isSearchMode()) createSearchResultLabel() else null
         suggestionSupport = when (mode) {
-            OverlayMode.COMMAND -> CommandSuggestionSupport(focusComponent, scheme, searchCandidates)
+            OverlayMode.COMMAND -> CommandSuggestionSupport(focusComponent, searchCandidates)
             OverlayMode.SEARCH_FORWARD, OverlayMode.SEARCH_BACKWARD -> SearchSuggestionSupport(
                 focusComponent,
-                scheme,
                 searchCandidates,
             )
         }
@@ -742,8 +741,7 @@ class CmdlineOverlayPanel(
 
     private inner class SearchSuggestionSupport(
         private val textField: JBTextField,
-        private val scheme: EditorColorsScheme,
-        private val candidates: List<String>,
+        private val candidates: List<SearchCandidateWord>,
     ) : SuggestionSupport {
         private val model = CollectionListModel<SearchMatchCandidate>()
         private val list = JBList(model).apply {
@@ -764,11 +762,12 @@ class CmdlineOverlayPanel(
                     if (value == null) {
                         return
                     }
+                    val baseAttributes = value.attributes
                     appendWithHighlights(
                         text = value.word,
                         highlightIndices = value.positions,
-                        normalAttrs = SimpleTextAttributes.REGULAR_ATTRIBUTES,
-                        highlightAttrs = currentSearchHighlightAttributes(),
+                        normalAttrs = baseAttributes,
+                        highlightAttrs = currentSearchHighlightAttributes(baseAttributes),
                     )
                 }
             }
@@ -991,8 +990,7 @@ class CmdlineOverlayPanel(
 
     private inner class CommandSuggestionSupport(
         private val textField: JBTextField,
-        private val scheme: EditorColorsScheme,
-        private val searchCandidates: List<String>,
+        private val searchCandidates: List<SearchCandidateWord>,
     ) : SuggestionSupport {
         private val model = CollectionListModel<SuggestionEntry>()
         private val list = JBList(model).apply {
@@ -1039,11 +1037,12 @@ class CmdlineOverlayPanel(
                         }
 
                         is SuggestionEntry.SearchWord -> {
+                            val baseAttributes = value.match.attributes
                             appendWithHighlights(
                                 text = value.match.word,
                                 highlightIndices = value.match.positions,
-                                normalAttrs = SimpleTextAttributes.REGULAR_ATTRIBUTES,
-                                highlightAttrs = highlightAttrs,
+                                normalAttrs = baseAttributes,
+                                highlightAttrs = currentSearchHighlightAttributes(baseAttributes),
                             )
                         }
 
@@ -1549,11 +1548,14 @@ class CmdlineOverlayPanel(
     )
 }
 
-private fun currentSearchHighlightAttributes(): SimpleTextAttributes {
+private fun currentSearchHighlightAttributes(baseAttributes: SimpleTextAttributes? = null): SimpleTextAttributes {
     // 使用 SearchMatch 命名颜色，仅保留圆角“药丸”样式，不再加粗
     val bg = JBColor.namedColor("SearchMatch.startBackground", JBColor(0xFFF59D, 0x4D3B00))
-    val fg = JBColor.namedColor("SearchMatch.startForeground", JBColor(0x000000, 0x000000))
-    return SimpleTextAttributes(bg, fg, null, SimpleTextAttributes.STYLE_SEARCH_MATCH)
+    val defaultFg = JBColor.namedColor("SearchMatch.startForeground", JBColor(0x000000, 0x000000))
+    val fg = baseAttributes?.fgColor ?: defaultFg
+    val wave = baseAttributes?.waveColor
+    val baseStyle = baseAttributes?.style ?: SimpleTextAttributes.STYLE_PLAIN
+    return SimpleTextAttributes(bg, fg, wave, baseStyle or SimpleTextAttributes.STYLE_SEARCH_MATCH)
 }
 
 private val SEARCH_RESULT_NEUTRAL_COLOR = JBColor.namedColor("Label.infoForeground", JBColor(0x9397A1, 0x6D737D))
@@ -1570,7 +1572,7 @@ private val searchMatchComparator = compareByDescending<SearchMatchCandidate> { 
     .thenBy { it.word }
 
 private fun matchSearchCandidates(
-    candidates: List<String>,
+    candidates: List<SearchCandidateWord>,
     rawQuery: String,
     limit: Int,
 ): List<SearchMatchCandidate> {
@@ -1585,11 +1587,12 @@ private fun matchSearchCandidates(
         .toList()
 }
 
-private fun computeSearchMatch(normalizedQuery: String, candidate: String): SearchMatchCandidate? {
-    if (normalizedQuery.length > candidate.length) {
+private fun computeSearchMatch(normalizedQuery: String, candidate: SearchCandidateWord): SearchMatchCandidate? {
+    val word = candidate.word
+    if (normalizedQuery.length > word.length) {
         return null
     }
-    val candidateLower = candidate.lowercase(Locale.ROOT)
+    val candidateLower = word.lowercase(Locale.ROOT)
     val positionsList = mutableListOf<Int>()
     var queryIndex = 0
     for (index in candidateLower.indices) {
@@ -1622,7 +1625,15 @@ private fun computeSearchMatch(normalizedQuery: String, candidate: String): Sear
         }
     }
     val span = positions.last() - positions.first()
-    return SearchMatchCandidate(candidate, maxStreak, positions.first(), span, sumIndices, positions)
+    return SearchMatchCandidate(
+        word = word,
+        attributes = SimpleTextAttributes.fromTextAttributes(candidate.attributes),
+        maxConsecutive = maxStreak,
+        firstIndex = positions.first(),
+        span = span,
+        sumIndices = sumIndices,
+        positions = positions,
+    )
 }
 
 private data class SubstitutionQuery(
@@ -1633,6 +1644,7 @@ private data class SubstitutionQuery(
 
 private data class SearchMatchCandidate(
     val word: String,
+    val attributes: SimpleTextAttributes,
     val maxConsecutive: Int,
     val firstIndex: Int,
     val span: Int,

@@ -6,7 +6,14 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.editor.EditorKind
+import com.intellij.openapi.editor.colors.EditorColorsManager
+import com.intellij.openapi.editor.colors.EditorColorsScheme
 import com.intellij.openapi.editor.ex.EditorEx
+import com.intellij.openapi.editor.ex.MarkupModelEx
+import com.intellij.openapi.editor.ex.RangeHighlighterEx
+import com.intellij.openapi.editor.markup.MarkupModel
+import com.intellij.openapi.editor.markup.RangeHighlighter
+import com.intellij.openapi.editor.markup.TextAttributes
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.popup.JBPopup
@@ -15,10 +22,13 @@ import com.intellij.openapi.ui.popup.JBPopupListener
 import com.intellij.openapi.ui.popup.LightweightWindowEvent
 import com.intellij.openapi.wm.IdeFocusManager
 import com.intellij.openapi.wm.WindowManager
+import com.intellij.ui.JBColor
 import com.intellij.ui.awt.RelativePoint
 import com.intellij.util.ui.JBUI
 import java.awt.Component
+import java.awt.Font
 import java.awt.Point
+import java.awt.Color
 import java.util.*
 import javax.swing.SwingUtilities
 import kotlin.math.max
@@ -91,9 +101,10 @@ class CmdlineOverlayManager(private val project: Project) {
     }
 
     private fun showOverlay(editor: Editor, mode: OverlayMode, history: CommandHistory) {
-        val searchCandidates = when (mode) {
-            OverlayMode.SEARCH_FORWARD, OverlayMode.SEARCH_BACKWARD, OverlayMode.COMMAND -> collectSearchWords(editor)
-        }
+        val searchCandidates =
+            when (mode) {
+                OverlayMode.SEARCH_FORWARD, OverlayMode.SEARCH_BACKWARD, OverlayMode.COMMAND -> collectSearchWords(editor)
+            }
         val panel = CmdlineOverlayPanel(mode, history, editor, searchCandidates)
         panel.setSearchInitialCaretOffset(editor.caretModel.primaryCaret.offset)
         panel.onSubmit = { text ->
@@ -203,53 +214,204 @@ class CmdlineOverlayManager(private val project: Project) {
         return editor
     }
 
-    private fun collectSearchWords(editor: Editor): List<String> {
+    private fun collectSearchWords(editor: Editor): List<SearchCandidateWord> {
         val application = ApplicationManager.getApplication()
         val extractor = {
             val document = editor.document
             val text = document.charsSequence
-            val unique = LinkedHashMap<String, String>()
-            val buffer = StringBuilder()
+            val unique = LinkedHashMap<String, SearchCandidateWord>()
+            val defaultForeground =
+                editor.colorsScheme.defaultForeground
+                    ?: EditorColorsManager.getInstance().globalScheme.defaultForeground
+                    ?: JBColor.foreground()
+            val defaultAttributes = TextAttributes().apply {
+                foregroundColor = defaultForeground
+                fontType = Font.PLAIN
+            }
+            val maxWords = MAX_SEARCH_WORDS
+            var index = 0
+            var wordStart = -1
+            val length = text.length
 
-            fun flush() {
-                if (buffer.isEmpty()) {
+            fun flushWord(endExclusive: Int) {
+                if (wordStart == -1 || unique.size >= maxWords) {
+                    wordStart = -1
                     return
                 }
-                if (unique.size >= MAX_SEARCH_WORDS) {
-                    buffer.setLength(0)
+                if (endExclusive <= wordStart) {
+                    wordStart = -1
                     return
                 }
-                val word = buffer.toString()
-                buffer.setLength(0)
+                val word = text.subSequence(wordStart, endExclusive).toString()
                 if (word.any { it.isLetterOrDigit() }) {
                     val key = word.lowercase(Locale.ROOT)
-                    unique.putIfAbsent(key, word)
+                    val attributes = resolveWordAttributes(editor, wordStart, defaultAttributes)
+                    val candidate = SearchCandidateWord(word, attributes)
+                    val existing = unique[key]
+                    if (existing == null) {
+                        unique[key] = candidate
+                    } else if (!isMeaningfulAttributes(existing.attributes, defaultAttributes) &&
+                        isMeaningfulAttributes(attributes, defaultAttributes)
+                    ) {
+                        unique[key] = candidate
+                    }
                 }
+                wordStart = -1
             }
 
-            for (char in text) {
-                if (char.isLetterOrDigit() || char == '-' || char == '_') {
-                    buffer.append(char)
+            while (index < length && unique.size < maxWords) {
+                val ch = text[index]
+                if (isWordChar(ch)) {
+                    if (wordStart == -1) {
+                        wordStart = index
+                    }
                 } else {
-                    flush()
+                    flushWord(index)
                 }
-                if (unique.size >= MAX_SEARCH_WORDS) {
-                    break
-                }
+                index += 1
             }
-            flush()
+            if (unique.size < maxWords) {
+                flushWord(length)
+            }
             unique.values.toList()
         }
         return if (application.isReadAccessAllowed) {
             extractor()
         } else {
-            application.runReadAction<List<String>> { extractor() }
+            application.runReadAction<List<SearchCandidateWord>> { extractor() }
         }
     }
 
     companion object {
         private const val MAX_SEARCH_WORDS = 5000
     }
+}
+
+data class SearchCandidateWord(
+    val word: String,
+    val attributes: TextAttributes,
+)
+
+private fun isMeaningfulAttributes(attributes: TextAttributes, defaultAttributes: TextAttributes): Boolean {
+    val foreground = attributes.foregroundColor
+    val defaultForeground = defaultAttributes.foregroundColor
+    if (!colorsEqual(foreground, defaultForeground)) {
+        return true
+    }
+    if (attributes.fontType != defaultAttributes.fontType) {
+        return true
+    }
+    if (!colorsEqual(attributes.backgroundColor, defaultAttributes.backgroundColor)) {
+        return true
+    }
+    if (!colorsEqual(attributes.effectColor, defaultAttributes.effectColor)) {
+        return true
+    }
+    if (attributes.effectType != defaultAttributes.effectType) {
+        return true
+    }
+    return false
+}
+
+private fun copyTextAttributes(source: TextAttributes): TextAttributes {
+    return (source.clone() as TextAttributes)
+}
+
+private fun colorsEqual(first: Color?, second: Color?): Boolean {
+    if (first === second) {
+        return true
+    }
+    if (first == null || second == null) {
+        return false
+    }
+    return first.rgb == second.rgb
+}
+
+private fun resolveWordAttributes(
+    editor: Editor,
+    offset: Int,
+    defaultAttributes: TextAttributes,
+): TextAttributes {
+    val document = editor.document
+    if (offset < 0 || offset >= document.textLength) {
+        return copyTextAttributes(defaultAttributes)
+    }
+    val scheme = editor.colorsScheme
+    val result = copyTextAttributes(defaultAttributes)
+
+    (editor as? EditorEx)?.let { editorEx ->
+        val highlighter = editorEx.highlighter
+        val iterator = highlighter.createIterator(offset)
+        if (!iterator.atEnd()) {
+            iterator.textAttributes?.let { applyAttributes(result, it) }
+        }
+        collectMarkupAttributes(editorEx, offset, scheme, result)
+    }
+
+    if (result.foregroundColor == null) {
+        result.foregroundColor = defaultAttributes.foregroundColor
+    }
+    return result
+}
+
+private fun collectMarkupAttributes(
+    editor: EditorEx,
+    offset: Int,
+    scheme: EditorColorsScheme,
+    target: TextAttributes,
+) {
+    processMarkup(editor.markupModel, offset, scheme, target)
+    processMarkup(editor.filteredDocumentMarkupModel, offset, scheme, target)
+}
+
+private fun processMarkup(
+    markup: MarkupModel,
+    offset: Int,
+    scheme: EditorColorsScheme,
+    target: TextAttributes,
+) {
+    when (markup) {
+        is MarkupModelEx -> {
+            markup.processRangeHighlightersOverlappingWith(offset, offset + 1) { highlighter ->
+                applyRangeHighlighterAttributes(highlighter, scheme, target)
+                true
+            }
+        }
+
+        else -> {
+            for (highlighter in markup.allHighlighters) {
+                if (highlighter.startOffset <= offset && offset < highlighter.endOffset) {
+                    applyRangeHighlighterAttributes(highlighter, scheme, target)
+                }
+            }
+        }
+    }
+}
+
+private fun applyRangeHighlighterAttributes(
+    highlighter: RangeHighlighter,
+    scheme: EditorColorsScheme,
+    target: TextAttributes,
+) {
+    val attrs = when (highlighter) {
+        is RangeHighlighterEx -> highlighter.getTextAttributes(scheme)
+        else -> highlighter.textAttributes
+    } ?: return
+    applyAttributes(target, attrs)
+}
+
+private fun applyAttributes(target: TextAttributes, source: TextAttributes) {
+    source.foregroundColor?.let { target.foregroundColor = it }
+    source.backgroundColor?.let { target.backgroundColor = it }
+    source.effectColor?.let { target.effectColor = it }
+    source.effectType?.let { target.effectType = it }
+    if (source.fontType != Font.PLAIN || target.fontType == Font.PLAIN) {
+        target.fontType = source.fontType
+    }
+}
+
+private fun isWordChar(ch: Char): Boolean {
+    return ch.isLetterOrDigit() || ch == '-' || ch == '_'
 }
 
 enum class OverlayMode(val header: String, val prefix: Char, val historyKey: HistoryKey) {
