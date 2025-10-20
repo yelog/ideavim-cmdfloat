@@ -6,6 +6,7 @@
 
 - feat: Support highlighting in the search suggestion list
 - feat: Support custom shortcuts in the suggestion list
+- feat: Deduplication in the search suggestion list is now case sensitive
 
 ## 0.0.3
 
