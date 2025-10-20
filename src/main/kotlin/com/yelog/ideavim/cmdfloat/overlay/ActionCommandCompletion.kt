@@ -22,9 +22,9 @@ object ActionCommandCompletion {
         }
 
         val matches = buildList {
-            for (candidate in suggestions) {
-                val score = FuzzyMatcher.score(query, candidate.matchText) ?: continue
-                add(score to candidate)
+            for (suggestion in suggestions) {
+                val score = FuzzyMatcher.score(query, suggestion.matchText) ?: continue
+                add(score to suggestion)
             }
         }
         if (matches.isEmpty()) {
@@ -73,10 +73,10 @@ object ActionCommandCompletion {
     }
 
     private fun readActionIdSequence(manager: ActionManagerEx, prefix: String): Sequence<String>? {
-        val method = manager.javaClass.methods.firstOrNull { candidate ->
-            candidate.name == "getActionIdSequence" &&
-                    candidate.parameterCount == 1 &&
-                    candidate.parameterTypes[0] == String::class.java
+        val method = manager.javaClass.methods.firstOrNull { suggestion ->
+            suggestion.name == "getActionIdSequence" &&
+                    suggestion.parameterCount == 1 &&
+                    suggestion.parameterTypes[0] == String::class.java
         } ?: return null
         val result = runCatching {
             if (!method.canAccess(manager)) {
@@ -101,10 +101,10 @@ object ActionCommandCompletion {
     }
 
     private fun readLegacyActionIds(manager: ActionManagerEx, prefix: String): Sequence<String>? {
-        val method = manager.javaClass.methods.firstOrNull { candidate ->
-            candidate.name == "getActionIds" &&
-                    candidate.parameterCount == 1 &&
-                    candidate.parameterTypes[0] == String::class.java
+        val method = manager.javaClass.methods.firstOrNull { suggestion ->
+            suggestion.name == "getActionIds" &&
+                    suggestion.parameterCount == 1 &&
+                    suggestion.parameterTypes[0] == String::class.java
         } ?: return null
         val result = runCatching {
             if (!method.canAccess(manager)) {

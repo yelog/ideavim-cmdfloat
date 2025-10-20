@@ -24,9 +24,9 @@ object ExCommandCompletion {
         }
 
         val matches = buildList {
-            for (candidate in suggestions) {
-                val score = FuzzyMatcher.score(trimmed, candidate.matchText) ?: continue
-                add(score to candidate)
+            for (suggestion in suggestions) {
+                val score = FuzzyMatcher.score(trimmed, suggestion.matchText) ?: continue
+                add(score to suggestion)
             }
         }
         if (matches.isEmpty()) {

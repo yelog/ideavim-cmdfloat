@@ -4,18 +4,18 @@ import kotlin.math.min
 
 object FuzzyMatcher {
 
-    fun score(query: String, candidate: String): Int? {
-        if (query.isEmpty() || candidate.isEmpty()) {
+    fun score(query: String, suggestion: String): Int? {
+        if (query.isEmpty() || suggestion.isEmpty()) {
             return null
         }
         val queryLower = query.lowercase()
-        val candidateLower = candidate.lowercase()
+        val suggestionLower = suggestion.lowercase()
         var searchIndex = 0
         var score = 0
         var lastMatch = -1
 
         for (char in queryLower) {
-            val found = candidateLower.indexOf(char, searchIndex)
+            val found = suggestionLower.indexOf(char, searchIndex)
             if (found == -1) {
                 return null
             }
@@ -40,7 +40,7 @@ object FuzzyMatcher {
             lastMatch = found
             searchIndex = found + 1
         }
-        score -= (candidate.length - query.length).coerceAtLeast(0)
+        score -= (suggestion.length - query.length).coerceAtLeast(0)
         return score
     }
 }

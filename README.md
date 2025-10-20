@@ -62,6 +62,16 @@ let g:cmdfloat_suggestion_next_keys = ['Down', '<C-n>', '<Tab>']
 
 Both lists accept Vim-style tokens such as `<C-n>` or simple descriptors like `ctrl+n`. When the variables are omitted, `Up`/`Down` remain the active bindings.
 
+### Highlight Rendering
+
+Suggestion rows reuse the editor highlight palette to emphasize matches. This runs by default; set a global flag in `.ideavimrc` to disable the extra highlighting when you need a cheaper rendering path:
+
+```vim
+let g:cmdfloat_highlight_suggestions = 0
+```
+
+Any truthy value (`1`, `on`, `true`, `yes`) keeps the extra styling enabled; falsy values turn it off while preserving the match indicators for your search query.
+
 ## Requirements
 - JetBrains IDE 2024.3.6 or newer.
 - IdeaVim 2.10.0 or newer. The overlay disables itself if IdeaVim is missing.

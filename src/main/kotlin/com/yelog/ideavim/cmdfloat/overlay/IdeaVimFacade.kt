@@ -13,6 +13,7 @@ import java.awt.event.KeyEvent
 import java.lang.reflect.Array as ReflectArray
 import java.lang.reflect.Method
 import java.lang.reflect.Modifier
+import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
@@ -130,8 +131,8 @@ object IdeaVimFacade {
     private val lineRangeClass = loadClass("com.maddyhome.idea.vim.ex.ranges.LineRange")
     private val updateIncsearchMethodInfo = run {
         val helper = searchHighlightsHelperClass ?: return@run null
-        val method = helper.methods.firstOrNull { candidate ->
-            candidate.name == "updateIncsearchHighlights" && candidate.parameterTypes.size == 6
+        val method = helper.methods.firstOrNull { suggestion ->
+            suggestion.name == "updateIncsearchHighlights" && suggestion.parameterTypes.size == 6
         } ?: return@run null
         val params = method.parameterTypes
         val countIndices = params.withIndex().filter { it.value == Integer.TYPE }.map { it.index }
@@ -307,6 +308,14 @@ object IdeaVimFacade {
         return normalized.takeIf { it.isNotEmpty() }
     }
 
+    fun readGlobalVariableBoolean(name: String): Boolean? {
+        if (!isAvailable()) {
+            return null
+        }
+        val raw = readGlobalVariableValue(name) ?: return null
+        return convertToBoolean(raw)
+    }
+
     private fun readGlobalVariableValue(name: String): Any? {
         val variableMethod = vimPluginVariableServiceMethod ?: return null
         val getter = variableServiceGlobalGetterMethod ?: return null
@@ -423,26 +432,45 @@ object IdeaVimFacade {
     }
 
     private fun convertToString(value: Any?): String? {
-        val candidate = unwrapOptional(value) ?: return null
-        when (candidate) {
-            is CharSequence -> return candidate.toString().trimMatchingQuotes()
-            is Char -> return candidate.toString()
-            is Number -> return candidate.toString()
+        val suggestion = unwrapOptional(value) ?: return null
+        when (suggestion) {
+            is CharSequence -> return suggestion.toString().trimMatchingQuotes()
+            is Char -> return suggestion.toString()
+            is Number -> return suggestion.toString()
         }
-        if (vimStringClass?.isInstance(candidate) == true) {
-            readStringProperty(candidate, "getValue", "value", "asString")?.let { return it.trimMatchingQuotes() }
+        if (vimStringClass?.isInstance(suggestion) == true) {
+            readStringProperty(suggestion, "getValue", "value", "asString")?.let { return it.trimMatchingQuotes() }
         }
-        if (vimNumberClass?.isInstance(candidate) == true) {
-            val asString = readStringProperty(candidate, "asString", "getValue")
+        if (vimNumberClass?.isInstance(suggestion) == true) {
+            val asString = readStringProperty(suggestion, "asString", "getValue")
             if (!asString.isNullOrBlank()) {
                 return asString.trimMatchingQuotes()
             }
         }
-        val toStringValue = candidate.toString()
+        val toStringValue = suggestion.toString()
         if (toStringValue.isNullOrBlank()) {
             return null
         }
         return toStringValue.trimMatchingQuotes()
+    }
+
+    private fun convertToBoolean(value: Any?): Boolean? {
+        val suggestion = unwrapOptional(value) ?: return null
+        return when (suggestion) {
+            is Boolean -> suggestion
+            is Number -> suggestion.toInt() != 0
+            is CharSequence -> parseBooleanLiteral(suggestion.toString())
+            else -> parseBooleanLiteral(suggestion.toString())
+        }
+    }
+
+    private fun parseBooleanLiteral(raw: String): Boolean? {
+        val text = raw.trim().lowercase(Locale.ROOT)
+        return when (text) {
+            "1", "true", "yes", "on", "enable", "enabled" -> true
+            "0", "false", "no", "off", "disable", "disabled" -> false
+            else -> null
+        }
     }
 
     private fun parseListLiteral(raw: String): List<String> {
@@ -468,34 +496,34 @@ object IdeaVimFacade {
         return if (single.isNotEmpty()) listOf(single) else emptyList()
     }
 
-    private fun unwrapOptional(candidate: Any?): Any? {
-        if (candidate == null) {
+    private fun unwrapOptional(suggestion: Any?): Any? {
+        if (suggestion == null) {
             return null
         }
-        if (candidate is Optional<*>) {
-            return if (candidate.isPresent) candidate.get() else null
+        if (suggestion is Optional<*>) {
+            return if (suggestion.isPresent) suggestion.get() else null
         }
-        val className = candidate.javaClass.name
+        val className = suggestion.javaClass.name
         if (className.startsWith("java.util.Optional")) {
             val isPresent = runCatching {
-                val method = candidate.javaClass.getMethod("isPresent")
-                if (!method.canAccess(candidate)) {
+                val method = suggestion.javaClass.getMethod("isPresent")
+                if (!method.canAccess(suggestion)) {
                     method.isAccessible = true
                 }
-                method.invoke(candidate) as? Boolean
+                method.invoke(suggestion) as? Boolean
             }.getOrNull()
             if (isPresent != true) {
                 return null
             }
-            val getter = runCatching { candidate.javaClass.getMethod("get") }.getOrNull()
+            val getter = runCatching { suggestion.javaClass.getMethod("get") }.getOrNull()
             if (getter != null) {
-                if (!getter.canAccess(candidate)) {
+                if (!getter.canAccess(suggestion)) {
                     getter.isAccessible = true
                 }
-                return runCatching { getter.invoke(candidate) }.getOrNull()
+                return runCatching { getter.invoke(suggestion) }.getOrNull()
             }
         }
-        return candidate
+        return suggestion
     }
 
     private fun String.trimMatchingQuotes(): String {
@@ -587,8 +615,8 @@ object IdeaVimFacade {
     }
 
     private fun readAllOptions(optionGroup: Any): Collection<Any?> {
-        val method = optionGroup.javaClass.methods.firstOrNull { candidate ->
-            candidate.parameterCount == 0 && candidate.name == "getAllOptions"
+        val method = optionGroup.javaClass.methods.firstOrNull { suggestion ->
+            suggestion.parameterCount == 0 && suggestion.name == "getAllOptions"
         } ?: return emptyList()
         val raw = runCatching {
             if (!method.canAccess(optionGroup)) {
@@ -685,16 +713,16 @@ object IdeaVimFacade {
 
     private fun getOptionFromGroup(optionGroup: Any, optionName: String): Any? {
         val methods = optionGroup.javaClass.methods
-        val candidate = methods.firstOrNull { method ->
+        val suggestion = methods.firstOrNull { method ->
             method.parameterCount == 1 &&
                     method.parameterTypes[0] == String::class.java &&
                     (method.name == "getOption" || method.name == "getOptionValue")
         } ?: return null
         return try {
-            if (!candidate.canAccess(optionGroup)) {
-                candidate.isAccessible = true
+            if (!suggestion.canAccess(optionGroup)) {
+                suggestion.isAccessible = true
             }
-            candidate.invoke(optionGroup, optionName)
+            suggestion.invoke(optionGroup, optionName)
         } catch (throwable: Throwable) {
             logger.debug("Failed to access option $optionName from IdeaVim option group.", throwable)
             null
@@ -946,7 +974,7 @@ object IdeaVimFacade {
 
         val result = tryCreateInstance(
             expectedType = targetClass,
-            candidates = listOf(
+            suggestions = listOf(
                 "com.maddyhome.idea.vim.newapi.VimEditorKt",
                 "com.maddyhome.idea.vim.newapi.IjVimEditorKt",
                 "com.maddyhome.idea.vim.newapi.EditorKt",
@@ -973,7 +1001,7 @@ object IdeaVimFacade {
         val targetClass = executionContextClass ?: return null
         val result = tryCreateInstance(
             expectedType = targetClass,
-            candidates = listOf(
+            suggestions = listOf(
                 "com.maddyhome.idea.vim.newapi.ExecutionContextKt",
                 "com.maddyhome.idea.vim.newapi.IjExecutionContextKt",
                 "com.maddyhome.idea.vim.newapi.ExecutionContextHelperKt",
@@ -999,10 +1027,10 @@ object IdeaVimFacade {
 
     private fun tryCreateInstance(
         expectedType: Class<*>,
-        candidates: List<String>,
+        suggestions: List<String>,
         availableArgs: List<Any>,
     ): Any? {
-        candidates.forEach { className ->
+        suggestions.forEach { className ->
             val clazz = loadClass(className) ?: return@forEach
 
             if (expectedType.isAssignableFrom(clazz)) {
@@ -1059,9 +1087,9 @@ object IdeaVimFacade {
     ): Array<Any?>? {
         val resolved = arrayOfNulls<Any>(parameterTypes.size)
         parameterTypes.forEachIndexed { index, parameterType ->
-            val match = availableArgs.firstOrNull { candidate ->
-                parameterType.isInstance(candidate) || (parameterType.isPrimitive && wrapPrimitive(parameterType).isInstance(
-                    candidate
+            val match = availableArgs.firstOrNull { suggestion ->
+                parameterType.isInstance(suggestion) || (parameterType.isPrimitive && wrapPrimitive(parameterType).isInstance(
+                    suggestion
                 ))
             } ?: return null
             resolved[index] = if (parameterType.isPrimitive) {

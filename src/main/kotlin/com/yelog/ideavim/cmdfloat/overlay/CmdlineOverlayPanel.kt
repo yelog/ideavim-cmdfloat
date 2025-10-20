@@ -30,7 +30,7 @@ class CmdlineOverlayPanel(
     private val mode: OverlayMode,
     history: CommandHistory,
     private val editor: Editor,
-    private val searchCandidates: List<SearchCandidateWord> = emptyList(),
+    private val searchSuggestions: List<SearchSuggestionWord> = emptyList(),
 ) {
 
     val component: JComponent
@@ -64,10 +64,10 @@ class CmdlineOverlayPanel(
         focusComponent = createTextField(scheme)
         searchResultLabel = if (isSearchMode()) createSearchResultLabel() else null
         suggestionSupport = when (mode) {
-            OverlayMode.COMMAND -> CommandSuggestionSupport(focusComponent, searchCandidates)
+            OverlayMode.COMMAND -> CommandSuggestionSupport(focusComponent, searchSuggestions)
             OverlayMode.SEARCH_FORWARD, OverlayMode.SEARCH_BACKWARD -> SearchSuggestionSupport(
                 focusComponent,
-                searchCandidates,
+                searchSuggestions,
             )
         }
 
@@ -743,9 +743,9 @@ class CmdlineOverlayPanel(
 
     private inner class SearchSuggestionSupport(
         private val textField: JBTextField,
-        private val candidates: List<SearchCandidateWord>,
+        private val suggestions: List<SearchSuggestionWord>,
     ) : SuggestionSupport {
-        private val model = CollectionListModel<SearchMatchCandidate>()
+        private val model = CollectionListModel<SearchMatchSuggestion>()
         private val list = JBList(model).apply {
             selectionMode = ListSelectionModel.SINGLE_SELECTION
             fixedCellHeight = JBUI.scale(20)
@@ -753,10 +753,10 @@ class CmdlineOverlayPanel(
             isOpaque = false
             foreground = textField.foreground
             putClientProperty("JComponent.roundRect", java.lang.Boolean.TRUE)
-            cellRenderer = object : ColoredListCellRenderer<SearchMatchCandidate>() {
+            cellRenderer = object : ColoredListCellRenderer<SearchMatchSuggestion>() {
                 override fun customizeCellRenderer(
-                    list: JList<out SearchMatchCandidate>,
-                    value: SearchMatchCandidate?,
+                    list: JList<out SearchMatchSuggestion>,
+                    value: SearchMatchSuggestion?,
                     index: Int,
                     selected: Boolean,
                     hasFocus: Boolean,
@@ -830,7 +830,7 @@ class CmdlineOverlayPanel(
 
         override fun onUserInput(content: String) {
             selectionBaseText = null
-            if (candidates.isEmpty()) {
+            if (suggestions.isEmpty()) {
                 dispose()
                 return
             }
@@ -839,7 +839,7 @@ class CmdlineOverlayPanel(
                 dispose()
                 return
             }
-            val matches = matchSearchCandidates(candidates, query, maxSuggestions)
+            val matches = matchSearchSuggestions(suggestions, query, maxSuggestions)
             if (matches.isEmpty()) {
                 dispose()
             } else {
@@ -847,7 +847,7 @@ class CmdlineOverlayPanel(
             }
         }
 
-        private fun updateSuggestions(matches: List<SearchMatchCandidate>) {
+        private fun updateSuggestions(matches: List<SearchMatchSuggestion>) {
             suppressSelection {
                 if (list.selectedIndex != -1) {
                     list.clearSelection()
@@ -992,7 +992,7 @@ class CmdlineOverlayPanel(
 
     private inner class CommandSuggestionSupport(
         private val textField: JBTextField,
-        private val searchCandidates: List<SearchCandidateWord>,
+        private val searchSuggestions: List<SearchSuggestionWord>,
     ) : SuggestionSupport {
         private val model = CollectionListModel<SuggestionEntry>()
         private val list = JBList(model).apply {
@@ -1061,20 +1061,14 @@ class CmdlineOverlayPanel(
                                 append("  ", SimpleTextAttributes.GRAYED_SMALL_ATTRIBUTES)
                                 appendWithHighlights(
                                     text = value.data.actionId,
-                                    highlightIndices = highlightIndicesForSubstring(
-                                        value.data.actionId,
-                                        highlightQuery
-                                    ),
+                                    highlightIndices = highlightIndicesForSubstring(value.data.actionId, highlightQuery),
                                     normalAttrs = SimpleTextAttributes.GRAY_ATTRIBUTES,
                                     highlightAttrs = highlightAttrs,
                                 )
                             } else {
                                 appendWithHighlights(
                                     text = value.data.actionId,
-                                    highlightIndices = highlightIndicesForSubstring(
-                                        value.data.actionId,
-                                        highlightQuery
-                                    ),
+                                    highlightIndices = highlightIndicesForSubstring(value.data.actionId, highlightQuery),
                                     normalAttrs = SimpleTextAttributes.REGULAR_ATTRIBUTES,
                                     highlightAttrs = highlightAttrs,
                                 )
@@ -1162,8 +1156,8 @@ class CmdlineOverlayPanel(
             currentOptionQuery = null
             currentExQuery = ""
             val substitutionQuery = parseSubstitutionSearchQuery(content)
-            if (substitutionQuery != null && searchCandidates.isNotEmpty()) {
-                val matches = matchSearchCandidates(searchCandidates, substitutionQuery.query, maxSearchSuggestions)
+            if (substitutionQuery != null && searchSuggestions.isNotEmpty()) {
+                val matches = matchSearchSuggestions(searchSuggestions, substitutionQuery.query, maxSearchSuggestions)
                 if (matches.isEmpty()) {
                     dispose()
                 } else {
@@ -1565,7 +1559,7 @@ private val SEARCH_RESULT_ACTIVE_COLOR = JBColor.namedColor("Link.activeForegrou
 private val SEARCH_RESULT_EMPTY_COLOR = JBColor.namedColor("Label.errorForeground", JBColor(0xE5484D, 0xFF6A6A))
 private const val NO_RESULTS_TEXT = "0 results"
 
-private val searchMatchComparator = compareByDescending<SearchMatchCandidate> { it.maxConsecutive }
+private val searchMatchComparator = compareByDescending<SearchMatchSuggestion> { it.maxConsecutive }
     .thenBy { it.firstIndex }
     .thenBy { it.span }
     .thenBy { it.sumIndices }
@@ -1573,32 +1567,32 @@ private val searchMatchComparator = compareByDescending<SearchMatchCandidate> { 
     .thenBy { it.word.lowercase(Locale.ROOT) }
     .thenBy { it.word }
 
-private fun matchSearchCandidates(
-    candidates: List<SearchCandidateWord>,
+private fun matchSearchSuggestions(
+    suggestions: List<SearchSuggestionWord>,
     rawQuery: String,
     limit: Int,
-): List<SearchMatchCandidate> {
+): List<SearchMatchSuggestion> {
     val normalized = rawQuery.trim().lowercase(Locale.ROOT)
     if (normalized.isEmpty()) {
         return emptyList()
     }
-    return candidates.asSequence()
-        .mapNotNull { candidate -> computeSearchMatch(normalized, candidate) }
+    return suggestions.asSequence()
+        .mapNotNull { suggestion -> computeSearchMatch(normalized, suggestion) }
         .sortedWith(searchMatchComparator)
         .take(limit)
         .toList()
 }
 
-private fun computeSearchMatch(normalizedQuery: String, candidate: SearchCandidateWord): SearchMatchCandidate? {
-    val word = candidate.word
+private fun computeSearchMatch(normalizedQuery: String, suggestion: SearchSuggestionWord): SearchMatchSuggestion? {
+    val word = suggestion.word
     if (normalizedQuery.length > word.length) {
         return null
     }
-    val candidateLower = word.lowercase(Locale.ROOT)
+    val suggestionLower = word.lowercase(Locale.ROOT)
     val positionsList = mutableListOf<Int>()
     var queryIndex = 0
-    for (index in candidateLower.indices) {
-        if (candidateLower[index] == normalizedQuery[queryIndex]) {
+    for (index in suggestionLower.indices) {
+        if (suggestionLower[index] == normalizedQuery[queryIndex]) {
             positionsList.add(index)
             queryIndex += 1
             if (queryIndex == normalizedQuery.length) {
@@ -1627,9 +1621,9 @@ private fun computeSearchMatch(normalizedQuery: String, candidate: SearchCandida
         }
     }
     val span = positions.last() - positions.first()
-    return SearchMatchCandidate(
+    return SearchMatchSuggestion(
         word = word,
-        attributes = SimpleTextAttributes.fromTextAttributes(candidate.attributes),
+        attributes = SimpleTextAttributes.fromTextAttributes(suggestion.attributes),
         maxConsecutive = maxStreak,
         firstIndex = positions.first(),
         span = span,
@@ -1644,7 +1638,7 @@ private data class SubstitutionQuery(
     val suffix: String,
 )
 
-private data class SearchMatchCandidate(
+private data class SearchMatchSuggestion(
     val word: String,
     val attributes: SimpleTextAttributes,
     val maxConsecutive: Int,
@@ -1711,7 +1705,7 @@ private data class ActionQuery(val prefix: String, val query: String)
 private data class OptionQuery(val prefix: String, val query: String)
 
 private sealed interface SuggestionEntry {
-    data class SearchWord(val match: SearchMatchCandidate, val context: SubstitutionQuery) : SuggestionEntry
+    data class SearchWord(val match: SearchMatchSuggestion, val context: SubstitutionQuery) : SuggestionEntry
     data class ExCommand(val data: ExCommandCompletion.Suggestion) : SuggestionEntry
     data class Action(val data: ActionCommandCompletion.Suggestion, val prefix: String) : SuggestionEntry
     data class Option(val data: OptionCommandCompletion.Suggestion, val prefix: String) : SuggestionEntry
