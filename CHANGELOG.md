@@ -5,6 +5,7 @@
 ## 0.0.4
 
 - feat: Support highlighting in the search suggestion list
+- feat: Support custom shortcuts in the suggestion list
 
 ## 0.0.3
 

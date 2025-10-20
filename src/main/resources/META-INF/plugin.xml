@@ -31,6 +31,7 @@ https://plugins.jetbrains.com/docs/intellij/plugin-configuration-file.html -->
         <h2>0.0.4</h2>
         <ul>
         <li>feat: Support highlighting in the search suggestion list</li>
+        <li>feat: Support custom shortcuts in the suggestion list</li>
         </ul>
         <h2>0.0.3</h2>
         <ul>

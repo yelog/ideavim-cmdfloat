@@ -51,6 +51,17 @@ Search for the plugin name `Vim CmdFloat` in the plugin marketplace, then instal
 - Press `Enter` to submit. The command is replayed in IdeaVim; press `Esc` to close without executing.
 - Use `Up`/`Down` to traverse history. Typing new text resets the history cursor.
 
+### Custom Keybindings
+
+The overlay uses `Up`/`Down`, `<C-p>`/`<C-n>`, and `<S-Tab>`/`<Tab>` by default to navigate search/command suggestions. To override these shortcuts, define global variables in your `.ideavimrc`:
+
+```vim
+let g:cmdfloat_suggestion_prev_keys = ['Up', '<C-p>', '<S-Tab>']
+let g:cmdfloat_suggestion_next_keys = ['Down', '<C-n>', '<Tab>']
+```
+
+Both lists accept Vim-style tokens such as `<C-n>` or simple descriptors like `ctrl+n`. When the variables are omitted, `Up`/`Down` remain the active bindings.
+
 ## Requirements
 - JetBrains IDE 2024.3.6 or newer.
 - IdeaVim 2.10.0 or newer. The overlay disables itself if IdeaVim is missing.

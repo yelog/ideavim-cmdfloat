@@ -10,11 +10,13 @@ import com.intellij.openapi.editor.ScrollType
 import java.awt.Rectangle
 import java.awt.event.InputEvent
 import java.awt.event.KeyEvent
+import java.lang.reflect.Array as ReflectArray
 import java.lang.reflect.Method
 import java.lang.reflect.Modifier
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
+import java.util.Optional
 import javax.swing.KeyStroke
 
 object IdeaVimFacade {
@@ -48,6 +50,33 @@ object IdeaVimFacade {
         val clazz = vimPluginClass ?: return@run null
         runCatching { clazz.getMethod("getOptionGroup") }.getOrNull()
     }
+    private val vimPluginVariableServiceMethod = run {
+        val clazz = vimPluginClass ?: return@run null
+        runCatching { clazz.getMethod("getVariableService") }.getOrNull()
+    }
+    private val variableServiceClass = vimPluginVariableServiceMethod?.returnType
+    private val variableServiceGlobalGetterMethod = run {
+        val serviceClass = variableServiceClass ?: return@run null
+        serviceClass.methods.firstOrNull { method ->
+            method.parameterCount == 1 &&
+                    method.parameterTypes[0] == String::class.java &&
+                    method.returnType != Void.TYPE &&
+                    method.name.contains("Global", ignoreCase = true) &&
+                    method.name.contains("Variable", ignoreCase = true)
+        }
+    }
+    private val vimStringClass = loadClass(
+        "com.maddyhome.idea.vim.vimscript.model.VimString",
+        "com.maddyhome.idea.vim.vimscript.model.datatypes.VimString",
+    )
+    private val vimListClass = loadClass(
+        "com.maddyhome.idea.vim.vimscript.model.VimList",
+        "com.maddyhome.idea.vim.vimscript.model.datatypes.VimList",
+    )
+    private val vimNumberClass = loadClass(
+        "com.maddyhome.idea.vim.vimscript.model.VimNumber",
+        "com.maddyhome.idea.vim.vimscript.model.datatypes.VimNumber",
+    )
     private val handleKeyMethodCache = ConcurrentHashMap<Class<*>, List<Method>>()
     private val handleKeyFailureLogged = ConcurrentHashMap.newKeySet<String>()
     private val vimEditorClass = loadClass("com.maddyhome.idea.vim.api.VimEditor")
@@ -267,6 +296,218 @@ object IdeaVimFacade {
             logger.warn("Failed to collect IdeaVim option definitions.", throwable)
             emptyList()
         }
+    }
+
+    fun readGlobalVariableStrings(name: String): List<String>? {
+        if (!isAvailable()) {
+            return null
+        }
+        val raw = readGlobalVariableValue(name) ?: return null
+        val normalized = normalizeGlobalValue(raw)
+        return normalized.takeIf { it.isNotEmpty() }
+    }
+
+    private fun readGlobalVariableValue(name: String): Any? {
+        val variableMethod = vimPluginVariableServiceMethod ?: return null
+        val getter = variableServiceGlobalGetterMethod ?: return null
+        return try {
+            val service = obtainVariableService(variableMethod) ?: return null
+            if (!getter.canAccess(service)) {
+                getter.isAccessible = true
+            }
+            val value = getter.invoke(service, name)
+            unwrapOptional(value)
+        } catch (throwable: Throwable) {
+            logger.debug("Failed to read IdeaVim global variable $name", throwable)
+            null
+        }
+    }
+
+    private fun obtainVariableService(method: Method): Any? {
+        return try {
+            if (Modifier.isStatic(method.modifiers)) {
+                if (!method.canAccess(null)) {
+                    method.isAccessible = true
+                }
+                method.invoke(null)
+            } else {
+                val plugin = vimPluginInstanceMethod?.invoke(null) ?: return null
+                if (!method.canAccess(plugin)) {
+                    method.isAccessible = true
+                }
+                method.invoke(plugin)
+            }
+        } catch (throwable: Throwable) {
+            logger.debug("Failed to obtain IdeaVim variable service", throwable)
+            null
+        }
+    }
+
+    private fun normalizeGlobalValue(value: Any?): List<String> {
+        val unwrapped = unwrapOptional(value) ?: return emptyList()
+        val sequence = flattenValue(unwrapped)
+        if (sequence != null) {
+            return sequence.mapNotNull { convertToString(it)?.takeIf { token -> token.isNotBlank() } }.toList()
+        }
+        val single = convertToString(unwrapped)?.takeIf { it.isNotBlank() } ?: return emptyList()
+        val literal = parseListLiteral(single)
+        return if (literal.isNotEmpty()) literal else listOf(single)
+    }
+
+    private fun flattenValue(value: Any?): Sequence<Any?>? {
+        val target = unwrapOptional(value) ?: return null
+        return when {
+            vimListClass?.isInstance(target) == true -> extractVimListValues(target)
+            target is Sequence<*> -> target
+            target is Iterable<*> -> target.asSequence()
+            target is Iterator<*> -> iteratorSequence(target)
+            target != null && target.javaClass.isArray -> arrayElements(target)
+            else -> null
+        }
+    }
+
+    private fun extractVimListValues(value: Any): Sequence<Any?>? {
+        val accessors = listOf("getValues", "values", "toList", "elements", "items")
+        accessors.forEach { name ->
+            val method = runCatching { value.javaClass.getMethod(name) }.getOrNull() ?: return@forEach
+            val result = runCatching {
+                if (!method.canAccess(value)) {
+                    method.isAccessible = true
+                }
+                method.invoke(value)
+            }.getOrNull() ?: return@forEach
+            when (result) {
+                is Sequence<*> -> return result
+                is Iterable<*> -> return result.asSequence()
+                is Iterator<*> -> return iteratorSequence(result)
+            }
+            if (result != value && result != null && result.javaClass.isArray) {
+                return arrayElements(result)
+            }
+        }
+        val field = runCatching { value.javaClass.getDeclaredField("values") }.getOrNull()
+        if (field != null) {
+            val result = runCatching {
+                if (!field.canAccess(value)) {
+                    field.isAccessible = true
+                }
+                field.get(value)
+            }.getOrNull()
+            when (result) {
+                is Sequence<*> -> return result
+                is Iterable<*> -> return result.asSequence()
+                is Iterator<*> -> return iteratorSequence(result)
+            }
+            if (result != null && result.javaClass.isArray) {
+                return arrayElements(result)
+            }
+        }
+        return null
+    }
+
+    private fun iteratorSequence(iterator: Iterator<*>): Sequence<Any?> {
+        return sequence {
+            while (iterator.hasNext()) {
+                yield(iterator.next())
+            }
+        }
+    }
+
+    private fun arrayElements(array: Any): Sequence<Any?> {
+        val length = ReflectArray.getLength(array)
+        return sequence {
+            for (index in 0 until length) {
+                yield(ReflectArray.get(array, index))
+            }
+        }
+    }
+
+    private fun convertToString(value: Any?): String? {
+        val candidate = unwrapOptional(value) ?: return null
+        when (candidate) {
+            is CharSequence -> return candidate.toString().trimMatchingQuotes()
+            is Char -> return candidate.toString()
+            is Number -> return candidate.toString()
+        }
+        if (vimStringClass?.isInstance(candidate) == true) {
+            readStringProperty(candidate, "getValue", "value", "asString")?.let { return it.trimMatchingQuotes() }
+        }
+        if (vimNumberClass?.isInstance(candidate) == true) {
+            val asString = readStringProperty(candidate, "asString", "getValue")
+            if (!asString.isNullOrBlank()) {
+                return asString.trimMatchingQuotes()
+            }
+        }
+        val toStringValue = candidate.toString()
+        if (toStringValue.isNullOrBlank()) {
+            return null
+        }
+        return toStringValue.trimMatchingQuotes()
+    }
+
+    private fun parseListLiteral(raw: String): List<String> {
+        val cleaned = raw.trim()
+        if (cleaned.isEmpty()) {
+            return emptyList()
+        }
+        val bracketed = cleaned.startsWith("[") && cleaned.endsWith("]")
+        val content = if (bracketed) cleaned.substring(1, cleaned.length - 1) else cleaned
+        val commaSplit = content.split(',')
+            .map { it.trim().trimMatchingQuotes() }
+            .filter { it.isNotEmpty() }
+        if (commaSplit.size > 1) {
+            return commaSplit
+        }
+        if (!bracketed && commaSplit.isEmpty()) {
+            val whitespaceSplit = content.split(Regex("\\s+")).map { it.trimMatchingQuotes() }.filter { it.isNotEmpty() }
+            if (whitespaceSplit.size > 1) {
+                return whitespaceSplit
+            }
+        }
+        val single = content.trimMatchingQuotes()
+        return if (single.isNotEmpty()) listOf(single) else emptyList()
+    }
+
+    private fun unwrapOptional(candidate: Any?): Any? {
+        if (candidate == null) {
+            return null
+        }
+        if (candidate is Optional<*>) {
+            return if (candidate.isPresent) candidate.get() else null
+        }
+        val className = candidate.javaClass.name
+        if (className.startsWith("java.util.Optional")) {
+            val isPresent = runCatching {
+                val method = candidate.javaClass.getMethod("isPresent")
+                if (!method.canAccess(candidate)) {
+                    method.isAccessible = true
+                }
+                method.invoke(candidate) as? Boolean
+            }.getOrNull()
+            if (isPresent != true) {
+                return null
+            }
+            val getter = runCatching { candidate.javaClass.getMethod("get") }.getOrNull()
+            if (getter != null) {
+                if (!getter.canAccess(candidate)) {
+                    getter.isAccessible = true
+                }
+                return runCatching { getter.invoke(candidate) }.getOrNull()
+            }
+        }
+        return candidate
+    }
+
+    private fun String.trimMatchingQuotes(): String {
+        var result = this.trim()
+        if (result.length >= 2) {
+            val first = result.first()
+            val last = result.last()
+            if ((first == '"' && last == '"') || (first == '\'' && last == '\'')) {
+                result = result.substring(1, result.length - 1).trim()
+            }
+        }
+        return result
     }
 
     fun isIgnoreCaseEnabled(): Boolean? = readBooleanOption("ignorecase")

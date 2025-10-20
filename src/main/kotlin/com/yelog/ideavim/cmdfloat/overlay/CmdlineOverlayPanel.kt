@@ -378,7 +378,6 @@ class CmdlineOverlayPanel(
             }
         })
 
-        inputMap.put(KeyStroke.getKeyStroke("UP"), ACTION_HISTORY_PREVIOUS)
         actionMap.put(ACTION_HISTORY_PREVIOUS, object : AbstractAction() {
             override fun actionPerformed(e: ActionEvent?) {
                 if (suggestionSupport?.moveSelection(previous = true) != true) {
@@ -387,7 +386,6 @@ class CmdlineOverlayPanel(
             }
         })
 
-        inputMap.put(KeyStroke.getKeyStroke("DOWN"), ACTION_HISTORY_NEXT)
         actionMap.put(ACTION_HISTORY_NEXT, object : AbstractAction() {
             override fun actionPerformed(e: ActionEvent?) {
                 if (suggestionSupport?.moveSelection(previous = false) != true) {
@@ -395,6 +393,14 @@ class CmdlineOverlayPanel(
                 }
             }
         })
+
+        val navigationBindings = CmdlineOverlayKeymap.suggestionNavigationBindings()
+        navigationBindings.previous.forEach { stroke ->
+            inputMap.put(stroke, ACTION_HISTORY_PREVIOUS)
+        }
+        navigationBindings.next.forEach { stroke ->
+            inputMap.put(stroke, ACTION_HISTORY_NEXT)
+        }
 
         val suggestionPreviousAction = object : AbstractAction() {
             override fun actionPerformed(e: ActionEvent?) {
@@ -410,10 +416,6 @@ class CmdlineOverlayPanel(
         inputMap.put(KeyStroke.getKeyStroke("shift TAB"), ACTION_SUGGESTION_PREVIOUS)
         actionMap.put(ACTION_SUGGESTION_PREVIOUS, suggestionPreviousAction)
         inputMap.put(KeyStroke.getKeyStroke("TAB"), ACTION_SUGGESTION_NEXT)
-        actionMap.put(ACTION_SUGGESTION_NEXT, suggestionNextAction)
-        inputMap.put(KeyStroke.getKeyStroke("ctrl P"), ACTION_SUGGESTION_PREVIOUS)
-        actionMap.put(ACTION_SUGGESTION_PREVIOUS, suggestionPreviousAction)
-        inputMap.put(KeyStroke.getKeyStroke("ctrl N"), ACTION_SUGGESTION_NEXT)
         actionMap.put(ACTION_SUGGESTION_NEXT, suggestionNextAction)
     }
 
