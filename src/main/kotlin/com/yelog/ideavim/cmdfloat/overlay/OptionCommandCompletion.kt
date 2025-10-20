@@ -6,16 +6,16 @@ object OptionCommandCompletion {
 
     private val logger = Logger.getInstance(OptionCommandCompletion::class.java)
 
-    data class Suggestion(
+    data class Completion(
         val name: String,
         val abbreviation: String?,
         val matchText: String,
     )
 
-    private val suggestions: List<Suggestion> by lazy(LazyThreadSafetyMode.PUBLICATION) { loadSuggestions() }
+    private val completions: List<Completion> by lazy(LazyThreadSafetyMode.PUBLICATION) { loadCompletions() }
 
-    fun suggest(query: String, limit: Int): List<Suggestion> {
-        if (suggestions.isEmpty()) {
+    fun suggest(query: String, limit: Int): List<Completion> {
+        if (completions.isEmpty()) {
             return emptyList()
         }
         val trimmed = query.trim()
@@ -24,9 +24,9 @@ object OptionCommandCompletion {
         }
 
         val matches = buildList {
-            for (suggestion in suggestions) {
-                val score = FuzzyMatcher.score(trimmed, suggestion.matchText) ?: continue
-                add(score to suggestion)
+            for (completion in completions) {
+                val score = FuzzyMatcher.score(trimmed, completion.matchText) ?: continue
+                add(score to completion)
             }
         }
         if (matches.isEmpty()) {
@@ -34,7 +34,7 @@ object OptionCommandCompletion {
         }
         return matches
             .sortedWith(
-                compareByDescending<Pair<Int, Suggestion>> { it.first }
+                compareByDescending<Pair<Int, Completion>> { it.first }
                     .thenBy { it.second.name.length }
                     .thenBy { it.second.matchText.length },
             )
@@ -44,7 +44,7 @@ object OptionCommandCompletion {
             .toList()
     }
 
-    private fun loadSuggestions(): List<Suggestion> {
+    private fun loadCompletions(): List<Completion> {
         return try {
             IdeaVimFacade.collectOptions().map { option ->
                 val matchText = buildString {
@@ -54,14 +54,14 @@ object OptionCommandCompletion {
                         append(abbrev)
                     }
                 }
-                Suggestion(
+                Completion(
                     name = option.name,
                     abbreviation = option.abbreviation?.takeIf { it.isNotBlank() },
                     matchText = matchText,
                 )
             }.sortedBy { it.name.lowercase() }
         } catch (throwable: Throwable) {
-            logger.warn("Unable to initialize option command suggestions.", throwable)
+            logger.warn("Unable to initialize option command completions.", throwable)
             emptyList()
         }
     }

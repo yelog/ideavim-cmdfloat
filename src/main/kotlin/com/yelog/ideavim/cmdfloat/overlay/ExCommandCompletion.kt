@@ -6,16 +6,16 @@ object ExCommandCompletion {
 
     private val logger = Logger.getInstance(ExCommandCompletion::class.java)
 
-    private val suggestions: List<Suggestion> by lazy(LazyThreadSafetyMode.PUBLICATION) { loadSuggestions() }
+    private val completions: List<Completion> by lazy(LazyThreadSafetyMode.PUBLICATION) { loadCompletions() }
 
-    data class Suggestion(
+    data class Completion(
         val displayText: String,
         val matchText: String,
         val executionText: String,
     )
 
-    fun suggest(query: String, limit: Int): List<Suggestion> {
-        if (suggestions.isEmpty()) {
+    fun suggest(query: String, limit: Int): List<Completion> {
+        if (completions.isEmpty()) {
             return emptyList()
         }
         val trimmed = query.trimStart()
@@ -24,9 +24,9 @@ object ExCommandCompletion {
         }
 
         val matches = buildList {
-            for (suggestion in suggestions) {
-                val score = FuzzyMatcher.score(trimmed, suggestion.matchText) ?: continue
-                add(score to suggestion)
+            for (completion in completions) {
+                val score = FuzzyMatcher.score(trimmed, completion.matchText) ?: continue
+                add(score to completion)
             }
         }
         if (matches.isEmpty()) {
@@ -34,7 +34,7 @@ object ExCommandCompletion {
         }
         return matches
             .sortedWith(
-                compareByDescending<Pair<Int, Suggestion>> { it.first }
+                compareByDescending<Pair<Int, Completion>> { it.first }
                     .thenBy { it.second.matchText.length }
                     .thenBy { it.second.executionText },
             )
@@ -44,9 +44,9 @@ object ExCommandCompletion {
             .toList()
     }
 
-    private fun loadSuggestions(): List<Suggestion> {
+    private fun loadCompletions(): List<Completion> {
         return try {
-            val unique = LinkedHashMap<String, Suggestion>()
+            val unique = LinkedHashMap<String, Completion>()
             val providers = listOfNotNull(
                 loadProviderInstance(
                     "com.maddyhome.idea.vim.vimscript.model.commands.EngineExCommandProvider",
@@ -72,7 +72,7 @@ object ExCommandCompletion {
                     val key = match.lowercase()
                     unique.putIfAbsent(
                         key,
-                        Suggestion(
+                        Completion(
                             displayText = rawKey,
                             matchText = match,
                             executionText = execution,
@@ -82,11 +82,11 @@ object ExCommandCompletion {
             }
 
             unique.values.sortedWith(
-                compareBy<Suggestion> { it.matchText.lowercase() }
+                compareBy<Completion> { it.matchText.lowercase() }
                     .thenBy { it.executionText.lowercase() },
             )
         } catch (throwable: Throwable) {
-            logger.warn("Unable to initialize ex command suggestions.", throwable)
+            logger.warn("Unable to initialize ex command completions.", throwable)
             emptyList()
         }
     }

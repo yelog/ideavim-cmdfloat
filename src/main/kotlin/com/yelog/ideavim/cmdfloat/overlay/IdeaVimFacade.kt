@@ -131,8 +131,8 @@ object IdeaVimFacade {
     private val lineRangeClass = loadClass("com.maddyhome.idea.vim.ex.ranges.LineRange")
     private val updateIncsearchMethodInfo = run {
         val helper = searchHighlightsHelperClass ?: return@run null
-        val method = helper.methods.firstOrNull { suggestion ->
-            suggestion.name == "updateIncsearchHighlights" && suggestion.parameterTypes.size == 6
+        val method = helper.methods.firstOrNull { completion ->
+            completion.name == "updateIncsearchHighlights" && completion.parameterTypes.size == 6
         } ?: return@run null
         val params = method.parameterTypes
         val countIndices = params.withIndex().filter { it.value == Integer.TYPE }.map { it.index }
@@ -432,22 +432,22 @@ object IdeaVimFacade {
     }
 
     private fun convertToString(value: Any?): String? {
-        val suggestion = unwrapOptional(value) ?: return null
-        when (suggestion) {
-            is CharSequence -> return suggestion.toString().trimMatchingQuotes()
-            is Char -> return suggestion.toString()
-            is Number -> return suggestion.toString()
+        val completion = unwrapOptional(value) ?: return null
+        when (completion) {
+            is CharSequence -> return completion.toString().trimMatchingQuotes()
+            is Char -> return completion.toString()
+            is Number -> return completion.toString()
         }
-        if (vimStringClass?.isInstance(suggestion) == true) {
-            readStringProperty(suggestion, "getValue", "value", "asString")?.let { return it.trimMatchingQuotes() }
+        if (vimStringClass?.isInstance(completion) == true) {
+            readStringProperty(completion, "getValue", "value", "asString")?.let { return it.trimMatchingQuotes() }
         }
-        if (vimNumberClass?.isInstance(suggestion) == true) {
-            val asString = readStringProperty(suggestion, "asString", "getValue")
+        if (vimNumberClass?.isInstance(completion) == true) {
+            val asString = readStringProperty(completion, "asString", "getValue")
             if (!asString.isNullOrBlank()) {
                 return asString.trimMatchingQuotes()
             }
         }
-        val toStringValue = suggestion.toString()
+        val toStringValue = completion.toString()
         if (toStringValue.isNullOrBlank()) {
             return null
         }
@@ -455,12 +455,12 @@ object IdeaVimFacade {
     }
 
     private fun convertToBoolean(value: Any?): Boolean? {
-        val suggestion = unwrapOptional(value) ?: return null
-        return when (suggestion) {
-            is Boolean -> suggestion
-            is Number -> suggestion.toInt() != 0
-            is CharSequence -> parseBooleanLiteral(suggestion.toString())
-            else -> parseBooleanLiteral(suggestion.toString())
+        val completion = unwrapOptional(value) ?: return null
+        return when (completion) {
+            is Boolean -> completion
+            is Number -> completion.toInt() != 0
+            is CharSequence -> parseBooleanLiteral(completion.toString())
+            else -> parseBooleanLiteral(completion.toString())
         }
     }
 
@@ -496,34 +496,34 @@ object IdeaVimFacade {
         return if (single.isNotEmpty()) listOf(single) else emptyList()
     }
 
-    private fun unwrapOptional(suggestion: Any?): Any? {
-        if (suggestion == null) {
+    private fun unwrapOptional(completion: Any?): Any? {
+        if (completion == null) {
             return null
         }
-        if (suggestion is Optional<*>) {
-            return if (suggestion.isPresent) suggestion.get() else null
+        if (completion is Optional<*>) {
+            return if (completion.isPresent) completion.get() else null
         }
-        val className = suggestion.javaClass.name
+        val className = completion.javaClass.name
         if (className.startsWith("java.util.Optional")) {
             val isPresent = runCatching {
-                val method = suggestion.javaClass.getMethod("isPresent")
-                if (!method.canAccess(suggestion)) {
+                val method = completion.javaClass.getMethod("isPresent")
+                if (!method.canAccess(completion)) {
                     method.isAccessible = true
                 }
-                method.invoke(suggestion) as? Boolean
+                method.invoke(completion) as? Boolean
             }.getOrNull()
             if (isPresent != true) {
                 return null
             }
-            val getter = runCatching { suggestion.javaClass.getMethod("get") }.getOrNull()
+            val getter = runCatching { completion.javaClass.getMethod("get") }.getOrNull()
             if (getter != null) {
-                if (!getter.canAccess(suggestion)) {
+                if (!getter.canAccess(completion)) {
                     getter.isAccessible = true
                 }
-                return runCatching { getter.invoke(suggestion) }.getOrNull()
+                return runCatching { getter.invoke(completion) }.getOrNull()
             }
         }
-        return suggestion
+        return completion
     }
 
     private fun String.trimMatchingQuotes(): String {
@@ -615,8 +615,8 @@ object IdeaVimFacade {
     }
 
     private fun readAllOptions(optionGroup: Any): Collection<Any?> {
-        val method = optionGroup.javaClass.methods.firstOrNull { suggestion ->
-            suggestion.parameterCount == 0 && suggestion.name == "getAllOptions"
+        val method = optionGroup.javaClass.methods.firstOrNull { completion ->
+            completion.parameterCount == 0 && completion.name == "getAllOptions"
         } ?: return emptyList()
         val raw = runCatching {
             if (!method.canAccess(optionGroup)) {
@@ -713,16 +713,16 @@ object IdeaVimFacade {
 
     private fun getOptionFromGroup(optionGroup: Any, optionName: String): Any? {
         val methods = optionGroup.javaClass.methods
-        val suggestion = methods.firstOrNull { method ->
+        val completion = methods.firstOrNull { method ->
             method.parameterCount == 1 &&
                     method.parameterTypes[0] == String::class.java &&
                     (method.name == "getOption" || method.name == "getOptionValue")
         } ?: return null
         return try {
-            if (!suggestion.canAccess(optionGroup)) {
-                suggestion.isAccessible = true
+            if (!completion.canAccess(optionGroup)) {
+                completion.isAccessible = true
             }
-            suggestion.invoke(optionGroup, optionName)
+            completion.invoke(optionGroup, optionName)
         } catch (throwable: Throwable) {
             logger.debug("Failed to access option $optionName from IdeaVim option group.", throwable)
             null
@@ -974,7 +974,7 @@ object IdeaVimFacade {
 
         val result = tryCreateInstance(
             expectedType = targetClass,
-            suggestions = listOf(
+            completions = listOf(
                 "com.maddyhome.idea.vim.newapi.VimEditorKt",
                 "com.maddyhome.idea.vim.newapi.IjVimEditorKt",
                 "com.maddyhome.idea.vim.newapi.EditorKt",
@@ -1001,7 +1001,7 @@ object IdeaVimFacade {
         val targetClass = executionContextClass ?: return null
         val result = tryCreateInstance(
             expectedType = targetClass,
-            suggestions = listOf(
+            completions = listOf(
                 "com.maddyhome.idea.vim.newapi.ExecutionContextKt",
                 "com.maddyhome.idea.vim.newapi.IjExecutionContextKt",
                 "com.maddyhome.idea.vim.newapi.ExecutionContextHelperKt",
@@ -1027,10 +1027,10 @@ object IdeaVimFacade {
 
     private fun tryCreateInstance(
         expectedType: Class<*>,
-        suggestions: List<String>,
+        completions: List<String>,
         availableArgs: List<Any>,
     ): Any? {
-        suggestions.forEach { className ->
+        completions.forEach { className ->
             val clazz = loadClass(className) ?: return@forEach
 
             if (expectedType.isAssignableFrom(clazz)) {
@@ -1087,9 +1087,9 @@ object IdeaVimFacade {
     ): Array<Any?>? {
         val resolved = arrayOfNulls<Any>(parameterTypes.size)
         parameterTypes.forEachIndexed { index, parameterType ->
-            val match = availableArgs.firstOrNull { suggestion ->
-                parameterType.isInstance(suggestion) || (parameterType.isPrimitive && wrapPrimitive(parameterType).isInstance(
-                    suggestion
+            val match = availableArgs.firstOrNull { completion ->
+                parameterType.isInstance(completion) || (parameterType.isPrimitive && wrapPrimitive(parameterType).isInstance(
+                    completion
                 ))
             } ?: return null
             resolved[index] = if (parameterType.isPrimitive) {

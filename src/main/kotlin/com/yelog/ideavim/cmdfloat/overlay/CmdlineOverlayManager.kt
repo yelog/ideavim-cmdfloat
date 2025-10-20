@@ -101,11 +101,11 @@ class CmdlineOverlayManager(private val project: Project) {
     }
 
     private fun showOverlay(editor: Editor, mode: OverlayMode, history: CommandHistory) {
-        val searchSuggestions =
+        val searchCompletions =
             when (mode) {
                 OverlayMode.SEARCH_FORWARD, OverlayMode.SEARCH_BACKWARD, OverlayMode.COMMAND -> collectSearchWords(editor)
             }
-        val panel = CmdlineOverlayPanel(mode, history, editor, searchSuggestions)
+        val panel = CmdlineOverlayPanel(mode, history, editor, searchCompletions)
         panel.setSearchInitialCaretOffset(editor.caretModel.primaryCaret.offset)
         panel.onSubmit = { text ->
             if (text.isNotEmpty()) {
@@ -214,13 +214,13 @@ class CmdlineOverlayManager(private val project: Project) {
         return editor
     }
 
-    private fun collectSearchWords(editor: Editor): List<SearchSuggestionWord> {
+    private fun collectSearchWords(editor: Editor): List<SearchCompletionWord> {
         val application = ApplicationManager.getApplication()
-        val highlightEnabled = CmdlineOverlaySettings.highlightSuggestionsEnabled()
+        val highlightEnabled = CmdlineOverlaySettings.highlightCompletionsEnabled()
         val extractor = {
             val document = editor.document
             val text = document.charsSequence
-            val unique = LinkedHashMap<String, SearchSuggestionWord>()
+            val unique = LinkedHashMap<String, SearchCompletionWord>()
             val defaultForeground =
                 editor.colorsScheme.defaultForeground
                     ?: EditorColorsManager.getInstance().globalScheme.defaultForeground
@@ -256,17 +256,17 @@ class CmdlineOverlayManager(private val project: Project) {
                     } else {
                         copyTextAttributes(defaultAttributes)
                     }
-                    val suggestion = SearchSuggestionWord(word, attributes)
+                    val completion = SearchCompletionWord(word, attributes)
                     if (!highlightEnabled) {
-                        unique.putIfAbsent(key, suggestion)
+                        unique.putIfAbsent(key, completion)
                     } else {
                         val existing = unique[key]
                         if (existing == null) {
-                            unique[key] = suggestion
+                            unique[key] = completion
                         } else if (!isMeaningfulAttributes(existing.attributes, defaultAttributes) &&
                             isMeaningfulAttributes(attributes, defaultAttributes)
                         ) {
-                            unique[key] = suggestion
+                            unique[key] = completion
                         }
                     }
                 }
@@ -292,7 +292,7 @@ class CmdlineOverlayManager(private val project: Project) {
         return if (application.isReadAccessAllowed) {
             extractor()
         } else {
-            application.runReadAction<List<SearchSuggestionWord>> { extractor() }
+            application.runReadAction<List<SearchCompletionWord>> { extractor() }
         }
     }
 
@@ -301,7 +301,7 @@ class CmdlineOverlayManager(private val project: Project) {
     }
 }
 
-data class SearchSuggestionWord(
+data class SearchCompletionWord(
     val word: String,
     val attributes: TextAttributes,
 )

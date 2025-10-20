@@ -53,21 +53,21 @@ Search for the plugin name `Vim CmdFloat` in the plugin marketplace, then instal
 
 ### Custom Keybindings
 
-The overlay uses `Up`/`Down`, `<C-p>`/`<C-n>`, and `<S-Tab>`/`<Tab>` by default to navigate search/command suggestions. To override these shortcuts, define global variables in your `.ideavimrc`:
+The overlay uses `Up`/`Down`, `<C-p>`/`<C-n>`, and `<S-Tab>`/`<Tab>` by default to navigate search/command completions. To override these shortcuts, define global variables in your `.ideavimrc`:
 
 ```vim
-let g:cmdfloat_suggestion_prev_keys = ['Up', '<C-p>', '<S-Tab>']
-let g:cmdfloat_suggestion_next_keys = ['Down', '<C-n>', '<Tab>']
+let g:cmdfloat_completion_prev_keys = ['Up', '<C-p>', '<S-Tab>']
+let g:cmdfloat_completion_next_keys = ['Down', '<C-n>', '<Tab>']
 ```
 
 Both lists accept Vim-style tokens such as `<C-n>` or simple descriptors like `ctrl+n`. When the variables are omitted, `Up`/`Down` remain the active bindings.
 
 ### Highlight Rendering
 
-Suggestion rows reuse the editor highlight palette to emphasize matches. This runs by default; set a global flag in `.ideavimrc` to disable the extra highlighting when you need a cheaper rendering path:
+Completion rows reuse the editor highlight palette to emphasize matches. This runs by default; set a global flag in `.ideavimrc` to disable the extra highlighting when you need a cheaper rendering path:
 
 ```vim
-let g:cmdfloat_highlight_suggestions = 0
+let g:cmdfloat_highlight_completions = 0
 ```
 
 Any truthy value (`1`, `on`, `true`, `yes`) keeps the extra styling enabled; falsy values turn it off while preserving the match indicators for your search query.

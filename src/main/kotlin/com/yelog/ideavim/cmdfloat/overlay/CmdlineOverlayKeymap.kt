@@ -8,15 +8,15 @@ import javax.swing.KeyStroke
 
 object CmdlineOverlayKeymap {
 
-    private const val PREVIOUS_VARIABLE = "cmdfloat_suggestion_prev_keys"
-    private const val NEXT_VARIABLE = "cmdfloat_suggestion_next_keys"
+    private const val PREVIOUS_VARIABLE = "cmdfloat_completion_prev_keys"
+    private const val NEXT_VARIABLE = "cmdfloat_completion_next_keys"
 
     data class NavigationBindings(
         val previous: List<KeyStroke>,
         val next: List<KeyStroke>,
     )
 
-    fun suggestionNavigationBindings(): NavigationBindings {
+    fun completionNavigationBindings(): NavigationBindings {
         val previous = readKeyStrokes(PREVIOUS_VARIABLE)
         val next = readKeyStrokes(NEXT_VARIABLE)
         val defaults = defaultBindings()

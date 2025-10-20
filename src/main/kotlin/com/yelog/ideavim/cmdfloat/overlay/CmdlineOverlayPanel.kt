@@ -30,7 +30,7 @@ class CmdlineOverlayPanel(
     private val mode: OverlayMode,
     history: CommandHistory,
     private val editor: Editor,
-    private val searchSuggestions: List<SearchSuggestionWord> = emptyList(),
+    private val searchCompletions: List<SearchCompletionWord> = emptyList(),
 ) {
 
     val component: JComponent
@@ -49,11 +49,11 @@ class CmdlineOverlayPanel(
     private var historyIndex = -1
     private var draftText: String = ""
     private var programmaticUpdate = false
-    private var suggestionSupport: SuggestionSupport? = null
+    private var completionSupport: CompletionSupport? = null
     private var preferredWidth = JBUI.scale(400)
     private val basePreferredHeight: Int
     private var searchCommitted = false
-    private var suggestionsHeight: Int? = null
+    private var completionsHeight: Int? = null
     private var searchCancelled = false
     private var searchInitialCaretOffset: Int = -1
     private var commandPreviewActive = false
@@ -63,11 +63,11 @@ class CmdlineOverlayPanel(
         val scheme = EditorColorsManager.getInstance().globalScheme
         focusComponent = createTextField(scheme)
         searchResultLabel = if (isSearchMode()) createSearchResultLabel() else null
-        suggestionSupport = when (mode) {
-            OverlayMode.COMMAND -> CommandSuggestionSupport(focusComponent, searchSuggestions)
-            OverlayMode.SEARCH_FORWARD, OverlayMode.SEARCH_BACKWARD -> SearchSuggestionSupport(
+        completionSupport = when (mode) {
+            OverlayMode.COMMAND -> CommandCompletionSupport(focusComponent, searchCompletions)
+            OverlayMode.SEARCH_FORWARD, OverlayMode.SEARCH_BACKWARD -> SearchCompletionSupport(
                 focusComponent,
-                searchSuggestions,
+                searchCompletions,
             )
         }
 
@@ -93,7 +93,7 @@ class CmdlineOverlayPanel(
             border = JBUI.Borders.empty(2, 0, 2, 0)
 
             add(inputPanel, java.awt.BorderLayout.NORTH)
-            suggestionSupport?.install(this)
+            completionSupport?.install(this)
         }
 
         component = JBPanel<JBPanel<*>>(java.awt.BorderLayout()).apply {
@@ -151,11 +151,11 @@ class CmdlineOverlayPanel(
     fun setPreferredWidth(width: Int) {
         preferredWidth = width
         applyPreferredSize()
-        suggestionSupport?.updatePopupWidth(width)
+        completionSupport?.updatePopupWidth(width)
     }
 
     private fun applyPreferredSize() {
-        val totalHeight = basePreferredHeight + (suggestionsHeight ?: 0)
+        val totalHeight = basePreferredHeight + (completionsHeight ?: 0)
         component.preferredSize = Dimension(preferredWidth, totalHeight)
         component.revalidate()
         component.repaint()
@@ -167,8 +167,8 @@ class CmdlineOverlayPanel(
         }
     }
 
-    private fun adjustSuggestionsHeight(suggestionsHeight: Int?) {
-        this.suggestionsHeight = suggestionsHeight
+    private fun adjustCompletionsHeight(completionsHeight: Int?) {
+        this.completionsHeight = completionsHeight
         applyPreferredSize()
     }
 
@@ -179,7 +179,7 @@ class CmdlineOverlayPanel(
             return
         }
         historyIndex = -1
-        suggestionSupport?.onUserInput(textField.text)
+        completionSupport?.onUserInput(textField.text)
         if (isSearchMode()) {
             updateSearchResultIndicator(textField.text)
         }
@@ -359,10 +359,10 @@ class CmdlineOverlayPanel(
 
     private fun installActions(textField: JBTextField) {
         textField.addActionListener {
-            suggestionSupport?.acceptSelection()
+            completionSupport?.acceptSelection()
             onSubmit?.invoke(textField.text)
             markSearchCommitted()
-            suggestionSupport?.dispose()
+            completionSupport?.dispose()
         }
 
         val inputMap: InputMap = textField.getInputMap(JComponent.WHEN_FOCUSED)
@@ -371,7 +371,7 @@ class CmdlineOverlayPanel(
         inputMap.put(KeyStroke.getKeyStroke("ESCAPE"), ACTION_CANCEL)
         actionMap.put(ACTION_CANCEL, object : AbstractAction() {
             override fun actionPerformed(e: ActionEvent) {
-                suggestionSupport?.dispose()
+                completionSupport?.dispose()
                 cancelSearchPreview()
                 cancelCommandPreview()
                 onCancel?.invoke()
@@ -380,7 +380,7 @@ class CmdlineOverlayPanel(
 
         actionMap.put(ACTION_HISTORY_PREVIOUS, object : AbstractAction() {
             override fun actionPerformed(e: ActionEvent?) {
-                if (suggestionSupport?.moveSelection(previous = true) != true) {
+                if (completionSupport?.moveSelection(previous = true) != true) {
                     navigateHistory(previous = true, textField)
                 }
             }
@@ -388,13 +388,13 @@ class CmdlineOverlayPanel(
 
         actionMap.put(ACTION_HISTORY_NEXT, object : AbstractAction() {
             override fun actionPerformed(e: ActionEvent?) {
-                if (suggestionSupport?.moveSelection(previous = false) != true) {
+                if (completionSupport?.moveSelection(previous = false) != true) {
                     navigateHistory(previous = false, textField)
                 }
             }
         })
 
-        val navigationBindings = CmdlineOverlayKeymap.suggestionNavigationBindings()
+        val navigationBindings = CmdlineOverlayKeymap.completionNavigationBindings()
         navigationBindings.previous.forEach { stroke ->
             inputMap.put(stroke, ACTION_HISTORY_PREVIOUS)
         }
@@ -402,21 +402,21 @@ class CmdlineOverlayPanel(
             inputMap.put(stroke, ACTION_HISTORY_NEXT)
         }
 
-        val suggestionPreviousAction = object : AbstractAction() {
+        val completionPreviousAction = object : AbstractAction() {
             override fun actionPerformed(e: ActionEvent?) {
-                suggestionSupport?.moveSelection(previous = true)
+                completionSupport?.moveSelection(previous = true)
             }
         }
-        val suggestionNextAction = object : AbstractAction() {
+        val completionNextAction = object : AbstractAction() {
             override fun actionPerformed(e: ActionEvent?) {
-                suggestionSupport?.moveSelection(previous = false)
+                completionSupport?.moveSelection(previous = false)
             }
         }
 
-        inputMap.put(KeyStroke.getKeyStroke("shift TAB"), ACTION_SUGGESTION_PREVIOUS)
-        actionMap.put(ACTION_SUGGESTION_PREVIOUS, suggestionPreviousAction)
-        inputMap.put(KeyStroke.getKeyStroke("TAB"), ACTION_SUGGESTION_NEXT)
-        actionMap.put(ACTION_SUGGESTION_NEXT, suggestionNextAction)
+        inputMap.put(KeyStroke.getKeyStroke("shift TAB"), ACTION_COMPLETION_PREVIOUS)
+        actionMap.put(ACTION_COMPLETION_PREVIOUS, completionPreviousAction)
+        inputMap.put(KeyStroke.getKeyStroke("TAB"), ACTION_COMPLETION_NEXT)
+        actionMap.put(ACTION_COMPLETION_NEXT, completionNextAction)
     }
 
     private fun navigateHistory(previous: Boolean, textField: JBTextField) {
@@ -451,7 +451,7 @@ class CmdlineOverlayPanel(
 
     private fun applyHistoryValue(value: String, textField: JBTextField) {
         setTextProgrammatically(textField, value)
-        suggestionSupport?.dispose()
+        completionSupport?.dispose()
         triggerSearchPreview(value)
         if (mode == OverlayMode.COMMAND) {
             cancelCommandPreview()
@@ -732,7 +732,7 @@ class CmdlineOverlayPanel(
         return mode == OverlayMode.SEARCH_FORWARD || mode == OverlayMode.SEARCH_BACKWARD
     }
 
-    private interface SuggestionSupport {
+    private interface CompletionSupport {
         fun install(parent: JComponent)
         fun onUserInput(content: String)
         fun moveSelection(previous: Boolean): Boolean
@@ -741,11 +741,11 @@ class CmdlineOverlayPanel(
         fun dispose()
     }
 
-    private inner class SearchSuggestionSupport(
+    private inner class SearchCompletionSupport(
         private val textField: JBTextField,
-        private val suggestions: List<SearchSuggestionWord>,
-    ) : SuggestionSupport {
-        private val model = CollectionListModel<SearchMatchSuggestion>()
+        private val completions: List<SearchCompletionWord>,
+    ) : CompletionSupport {
+        private val model = CollectionListModel<SearchMatchCompletion>()
         private val list = JBList(model).apply {
             selectionMode = ListSelectionModel.SINGLE_SELECTION
             fixedCellHeight = JBUI.scale(20)
@@ -753,10 +753,10 @@ class CmdlineOverlayPanel(
             isOpaque = false
             foreground = textField.foreground
             putClientProperty("JComponent.roundRect", java.lang.Boolean.TRUE)
-            cellRenderer = object : ColoredListCellRenderer<SearchMatchSuggestion>() {
+            cellRenderer = object : ColoredListCellRenderer<SearchMatchCompletion>() {
                 override fun customizeCellRenderer(
-                    list: JList<out SearchMatchSuggestion>,
-                    value: SearchMatchSuggestion?,
+                    list: JList<out SearchMatchCompletion>,
+                    value: SearchMatchCompletion?,
                     index: Int,
                     selected: Boolean,
                     hasFocus: Boolean,
@@ -793,7 +793,7 @@ class CmdlineOverlayPanel(
         }
 
         private val maxVisibleRows = 8
-        private val maxSuggestions = 50
+        private val maxCompletions = 50
         private var parentComponent: JComponent? = null
         private var currentHeight: Int = JBUI.scale(80)
 
@@ -830,7 +830,7 @@ class CmdlineOverlayPanel(
 
         override fun onUserInput(content: String) {
             selectionBaseText = null
-            if (suggestions.isEmpty()) {
+            if (completions.isEmpty()) {
                 dispose()
                 return
             }
@@ -839,15 +839,15 @@ class CmdlineOverlayPanel(
                 dispose()
                 return
             }
-            val matches = matchSearchSuggestions(suggestions, query, maxSuggestions)
+            val matches = matchSearchCompletions(completions, query, maxCompletions)
             if (matches.isEmpty()) {
                 dispose()
             } else {
-                updateSuggestions(matches)
+                updateCompletions(matches)
             }
         }
 
-        private fun updateSuggestions(matches: List<SearchMatchSuggestion>) {
+        private fun updateCompletions(matches: List<SearchMatchCompletion>) {
             suppressSelection {
                 if (list.selectedIndex != -1) {
                     list.clearSelection()
@@ -879,7 +879,7 @@ class CmdlineOverlayPanel(
             }
             parent.revalidate()
             parent.repaint()
-            adjustSuggestionsHeight(height)
+            adjustCompletionsHeight(height)
         }
 
         override fun moveSelection(previous: Boolean): Boolean {
@@ -951,7 +951,7 @@ class CmdlineOverlayPanel(
             }
             removeFromParent()
             selectionBaseText = null
-            adjustSuggestionsHeight(null)
+            adjustCompletionsHeight(null)
         }
 
         private fun removeFromParent() {
@@ -990,11 +990,11 @@ class CmdlineOverlayPanel(
         }
     }
 
-    private inner class CommandSuggestionSupport(
+    private inner class CommandCompletionSupport(
         private val textField: JBTextField,
-        private val searchSuggestions: List<SearchSuggestionWord>,
-    ) : SuggestionSupport {
-        private val model = CollectionListModel<SuggestionEntry>()
+        private val searchCompletions: List<SearchCompletionWord>,
+    ) : CompletionSupport {
+        private val model = CollectionListModel<CompletionEntry>()
         private val list = JBList(model).apply {
             selectionMode = ListSelectionModel.SINGLE_SELECTION
             fixedCellHeight = JBUI.scale(20)
@@ -1002,10 +1002,10 @@ class CmdlineOverlayPanel(
             isOpaque = false
             foreground = textField.foreground
             putClientProperty("JComponent.roundRect", java.lang.Boolean.TRUE)
-            cellRenderer = object : ColoredListCellRenderer<SuggestionEntry>() {
+            cellRenderer = object : ColoredListCellRenderer<CompletionEntry>() {
                 override fun customizeCellRenderer(
-                    list: JList<out SuggestionEntry>,
-                    value: SuggestionEntry?,
+                    list: JList<out CompletionEntry>,
+                    value: CompletionEntry?,
                     index: Int,
                     selected: Boolean,
                     hasFocus: Boolean,
@@ -1014,11 +1014,11 @@ class CmdlineOverlayPanel(
                         return
                     }
                     val highlightAttrs = currentSearchHighlightAttributes()
-                    val actionQueryText = this@CommandSuggestionSupport.currentActionQuery?.query
-                    val optionQueryText = this@CommandSuggestionSupport.currentOptionQuery?.query
-                    val exQueryText = this@CommandSuggestionSupport.currentExQuery
+                    val actionQueryText = this@CommandCompletionSupport.currentActionQuery?.query
+                    val optionQueryText = this@CommandCompletionSupport.currentOptionQuery?.query
+                    val exQueryText = this@CommandCompletionSupport.currentExQuery
                     when (value) {
-                        is SuggestionEntry.ExCommand -> {
+                        is CompletionEntry.ExCommand -> {
                             val display = value.data.displayText
                             if (display.isNotBlank()) {
                                 appendWithHighlights(
@@ -1038,7 +1038,7 @@ class CmdlineOverlayPanel(
                             }
                         }
 
-                        is SuggestionEntry.SearchWord -> {
+                        is CompletionEntry.SearchWord -> {
                             val baseAttributes = value.match.attributes
                             appendWithHighlights(
                                 text = value.match.word,
@@ -1048,7 +1048,7 @@ class CmdlineOverlayPanel(
                             )
                         }
 
-                        is SuggestionEntry.Action -> {
+                        is CompletionEntry.Action -> {
                             val highlightQuery = actionQueryText
                             val presentation = value.data.presentation
                             if (!presentation.isNullOrBlank()) {
@@ -1075,7 +1075,7 @@ class CmdlineOverlayPanel(
                             }
                         }
 
-                        is SuggestionEntry.Option -> {
+                        is CompletionEntry.Option -> {
                             val highlightQuery = optionQueryText
                             appendWithHighlights(
                                 text = value.data.name,
@@ -1116,7 +1116,7 @@ class CmdlineOverlayPanel(
         }
 
         private val maxVisibleRows = 8
-        private val maxSearchSuggestions = 50
+        private val maxSearchCompletions = 50
         private var parentComponent: JComponent? = null
         private var currentHeight: Int = JBUI.scale(80)
 
@@ -1156,45 +1156,45 @@ class CmdlineOverlayPanel(
             currentOptionQuery = null
             currentExQuery = ""
             val substitutionQuery = parseSubstitutionSearchQuery(content)
-            if (substitutionQuery != null && searchSuggestions.isNotEmpty()) {
-                val matches = matchSearchSuggestions(searchSuggestions, substitutionQuery.query, maxSearchSuggestions)
+            if (substitutionQuery != null && searchCompletions.isNotEmpty()) {
+                val matches = matchSearchCompletions(searchCompletions, substitutionQuery.query, maxSearchCompletions)
                 if (matches.isEmpty()) {
                     dispose()
                 } else {
-                    updateSuggestions(matches.map { SuggestionEntry.SearchWord(it, substitutionQuery) })
+                    updateCompletions(matches.map { CompletionEntry.SearchWord(it, substitutionQuery) })
                 }
                 return
             }
 
             val actionQuery = parseActionQuery(content)
             if (actionQuery != null) {
-                val suggestions = ActionCommandCompletion.suggest(actionQuery.query, maxVisibleRows)
-                if (suggestions.isEmpty()) {
+                val completions = ActionCommandCompletion.suggest(actionQuery.query, maxVisibleRows)
+                if (completions.isEmpty()) {
                     dispose()
                 } else {
                     currentActionQuery = actionQuery
-                    updateSuggestions(suggestions.map { SuggestionEntry.Action(it, actionQuery.prefix) })
+                    updateCompletions(completions.map { CompletionEntry.Action(it, actionQuery.prefix) })
                 }
                 return
             }
 
             val optionQuery = parseSetOptionQuery(content)
             if (optionQuery != null) {
-                val suggestions = OptionCommandCompletion.suggest(optionQuery.query, maxVisibleRows)
-                if (suggestions.isEmpty()) {
+                val completions = OptionCommandCompletion.suggest(optionQuery.query, maxVisibleRows)
+                if (completions.isEmpty()) {
                     dispose()
                 } else {
                     currentOptionQuery = optionQuery
-                    updateSuggestions(suggestions.map { SuggestionEntry.Option(it, optionQuery.prefix) })
+                    updateCompletions(completions.map { CompletionEntry.Option(it, optionQuery.prefix) })
                 }
                 return
             }
-            val suggestions = ExCommandCompletion.suggest(content, maxVisibleRows)
-            if (suggestions.isEmpty()) {
+            val completions = ExCommandCompletion.suggest(content, maxVisibleRows)
+            if (completions.isEmpty()) {
                 dispose()
             } else {
                 currentExQuery = extractCommandHighlight(content)
-                updateSuggestions(suggestions.map { SuggestionEntry.ExCommand(it) })
+                updateCompletions(completions.map { CompletionEntry.ExCommand(it) })
             }
         }
 
@@ -1249,12 +1249,12 @@ class CmdlineOverlayPanel(
             return true
         }
 
-        private fun updateSuggestions(suggestions: List<SuggestionEntry>) {
+        private fun updateCompletions(completions: List<CompletionEntry>) {
             suppressSelection {
                 if (list.selectedIndex != -1) {
                     list.clearSelection()
                 }
-                model.replaceAll(suggestions)
+                model.replaceAll(completions)
                 if (model.isEmpty) {
                     list.clearSelection()
                 }
@@ -1262,7 +1262,7 @@ class CmdlineOverlayPanel(
             val parent = parentComponent
             if (model.isEmpty || parent == null) {
                 removeFromParent()
-                adjustSuggestionsHeight(null)
+                adjustCompletionsHeight(null)
                 return
             }
             val visibleRows = min(model.size, maxVisibleRows)
@@ -1285,7 +1285,7 @@ class CmdlineOverlayPanel(
             }
             parent.revalidate()
             parent.repaint()
-            adjustSuggestionsHeight(height)
+            adjustCompletionsHeight(height)
         }
 
         private fun isActive(): Boolean = (model.size > 0 && scrollPane.parent != null)
@@ -1299,7 +1299,7 @@ class CmdlineOverlayPanel(
             }
             removeFromParent()
             selectionBaseText = null
-            adjustSuggestionsHeight(null)
+            adjustCompletionsHeight(null)
         }
 
         private fun removeFromParent() {
@@ -1390,22 +1390,22 @@ class CmdlineOverlayPanel(
         }
 
         private fun applySelection(index: Int) {
-            when (val suggestion = model.getElementAt(index)) {
-                is SuggestionEntry.SearchWord -> {
-                    val newValue = suggestion.context.prefix + suggestion.match.word + suggestion.context.suffix
+            when (val completion = model.getElementAt(index)) {
+                is CompletionEntry.SearchWord -> {
+                    val newValue = completion.context.prefix + completion.match.word + completion.context.suffix
                     setTextProgrammatically(textField, newValue)
                 }
 
-                is SuggestionEntry.ExCommand -> {
-                    setTextProgrammatically(textField, suggestion.data.executionText)
+                is CompletionEntry.ExCommand -> {
+                    setTextProgrammatically(textField, completion.data.executionText)
                 }
 
-                is SuggestionEntry.Action -> {
-                    setTextProgrammatically(textField, suggestion.prefix + suggestion.data.actionId)
+                is CompletionEntry.Action -> {
+                    setTextProgrammatically(textField, completion.prefix + completion.data.actionId)
                 }
 
-                is SuggestionEntry.Option -> {
-                    setTextProgrammatically(textField, suggestion.prefix + suggestion.data.name)
+                is CompletionEntry.Option -> {
+                    setTextProgrammatically(textField, completion.prefix + completion.data.name)
                 }
             }
         }
@@ -1514,8 +1514,8 @@ class CmdlineOverlayPanel(
         private const val ACTION_CANCEL = "ideavim.cmdline.cancel"
         private const val ACTION_HISTORY_PREVIOUS = "ideavim.cmdline.history.previous"
         private const val ACTION_HISTORY_NEXT = "ideavim.cmdline.history.next"
-        private const val ACTION_SUGGESTION_PREVIOUS = "ideavim.cmdline.suggestion.previous"
-        private const val ACTION_SUGGESTION_NEXT = "ideavim.cmdline.suggestion.next"
+        private const val ACTION_COMPLETION_PREVIOUS = "ideavim.cmdline.completion.previous"
+        private const val ACTION_COMPLETION_NEXT = "ideavim.cmdline.completion.next"
     }
 
     private fun setTextProgrammatically(textField: JBTextField, value: String) {
@@ -1559,7 +1559,7 @@ private val SEARCH_RESULT_ACTIVE_COLOR = JBColor.namedColor("Link.activeForegrou
 private val SEARCH_RESULT_EMPTY_COLOR = JBColor.namedColor("Label.errorForeground", JBColor(0xE5484D, 0xFF6A6A))
 private const val NO_RESULTS_TEXT = "0 results"
 
-private val searchMatchComparator = compareByDescending<SearchMatchSuggestion> { it.maxConsecutive }
+private val searchMatchComparator = compareByDescending<SearchMatchCompletion> { it.maxConsecutive }
     .thenBy { it.firstIndex }
     .thenBy { it.span }
     .thenBy { it.sumIndices }
@@ -1567,32 +1567,32 @@ private val searchMatchComparator = compareByDescending<SearchMatchSuggestion> {
     .thenBy { it.word.lowercase(Locale.ROOT) }
     .thenBy { it.word }
 
-private fun matchSearchSuggestions(
-    suggestions: List<SearchSuggestionWord>,
+private fun matchSearchCompletions(
+    completions: List<SearchCompletionWord>,
     rawQuery: String,
     limit: Int,
-): List<SearchMatchSuggestion> {
+): List<SearchMatchCompletion> {
     val normalized = rawQuery.trim().lowercase(Locale.ROOT)
     if (normalized.isEmpty()) {
         return emptyList()
     }
-    return suggestions.asSequence()
-        .mapNotNull { suggestion -> computeSearchMatch(normalized, suggestion) }
+    return completions.asSequence()
+        .mapNotNull { completion -> computeSearchMatch(normalized, completion) }
         .sortedWith(searchMatchComparator)
         .take(limit)
         .toList()
 }
 
-private fun computeSearchMatch(normalizedQuery: String, suggestion: SearchSuggestionWord): SearchMatchSuggestion? {
-    val word = suggestion.word
+private fun computeSearchMatch(normalizedQuery: String, completion: SearchCompletionWord): SearchMatchCompletion? {
+    val word = completion.word
     if (normalizedQuery.length > word.length) {
         return null
     }
-    val suggestionLower = word.lowercase(Locale.ROOT)
+    val completionLower = word.lowercase(Locale.ROOT)
     val positionsList = mutableListOf<Int>()
     var queryIndex = 0
-    for (index in suggestionLower.indices) {
-        if (suggestionLower[index] == normalizedQuery[queryIndex]) {
+    for (index in completionLower.indices) {
+        if (completionLower[index] == normalizedQuery[queryIndex]) {
             positionsList.add(index)
             queryIndex += 1
             if (queryIndex == normalizedQuery.length) {
@@ -1621,9 +1621,9 @@ private fun computeSearchMatch(normalizedQuery: String, suggestion: SearchSugges
         }
     }
     val span = positions.last() - positions.first()
-    return SearchMatchSuggestion(
+    return SearchMatchCompletion(
         word = word,
-        attributes = SimpleTextAttributes.fromTextAttributes(suggestion.attributes),
+        attributes = SimpleTextAttributes.fromTextAttributes(completion.attributes),
         maxConsecutive = maxStreak,
         firstIndex = positions.first(),
         span = span,
@@ -1638,7 +1638,7 @@ private data class SubstitutionQuery(
     val suffix: String,
 )
 
-private data class SearchMatchSuggestion(
+private data class SearchMatchCompletion(
     val word: String,
     val attributes: SimpleTextAttributes,
     val maxConsecutive: Int,
@@ -1704,9 +1704,9 @@ private fun extractCommandHighlight(content: String): String {
 private data class ActionQuery(val prefix: String, val query: String)
 private data class OptionQuery(val prefix: String, val query: String)
 
-private sealed interface SuggestionEntry {
-    data class SearchWord(val match: SearchMatchSuggestion, val context: SubstitutionQuery) : SuggestionEntry
-    data class ExCommand(val data: ExCommandCompletion.Suggestion) : SuggestionEntry
-    data class Action(val data: ActionCommandCompletion.Suggestion, val prefix: String) : SuggestionEntry
-    data class Option(val data: OptionCommandCompletion.Suggestion, val prefix: String) : SuggestionEntry
+private sealed interface CompletionEntry {
+    data class SearchWord(val match: SearchMatchCompletion, val context: SubstitutionQuery) : CompletionEntry
+    data class ExCommand(val data: ExCommandCompletion.Completion) : CompletionEntry
+    data class Action(val data: ActionCommandCompletion.Completion, val prefix: String) : CompletionEntry
+    data class Option(val data: OptionCommandCompletion.Completion, val prefix: String) : CompletionEntry
 }

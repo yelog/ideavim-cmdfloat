@@ -4,9 +4,9 @@
 
 ## 0.0.4
 
-- feat: Support highlighting in the search suggestion list
-- feat: Support custom shortcuts in the suggestion list
-- feat: Deduplication in the search suggestion list is now case sensitive
+- feat: Support highlighting in the search completion list
+- feat: Support custom shortcuts in the completion list
+- feat: Deduplication in the search completion list is now case sensitive
 
 ## 0.0.3
 
@@ -23,10 +23,10 @@
 ### Added
 
 - Support displaying input and execution of Search and CmdLine via floating window
-- CmdLine supports suggestion options
+- CmdLine supports completion options
 - Search supports showing all current words
 - Search supports displaying the total number of matches and the current index
-- The suggestion box supports shortcut keys by default: up/down arrows, Tab/Shift+Tab, ctrl+n/ctrl+p
+- The completion box supports shortcut keys by default: up/down arrows, Tab/Shift+Tab, ctrl+n/ctrl+p
 
 ## [Unreleased]
 ### Added
