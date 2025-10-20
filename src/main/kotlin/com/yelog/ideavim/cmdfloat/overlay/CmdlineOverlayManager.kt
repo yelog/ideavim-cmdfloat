@@ -245,7 +245,12 @@ class CmdlineOverlayManager(private val project: Project) {
                 }
                 val word = text.subSequence(wordStart, endExclusive).toString()
                 if (word.any { it.isLetterOrDigit() }) {
-                    val key = word.lowercase(Locale.ROOT)
+                    val lowerKey = word.lowercase(Locale.ROOT)
+                    val key = buildString {
+                        append(lowerKey)
+                        append('\u0000')
+                        append(word)
+                    }
                     val attributes = if (highlightEnabled) {
                         resolveWordAttributes(editor, wordStart, defaultAttributes)
                     } else {
