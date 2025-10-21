@@ -22,6 +22,7 @@ import com.intellij.openapi.ui.popup.JBPopupListener
 import com.intellij.openapi.ui.popup.LightweightWindowEvent
 import com.intellij.openapi.wm.IdeFocusManager
 import com.intellij.openapi.wm.WindowManager
+import com.intellij.openapi.util.TextRange
 import com.intellij.ui.JBColor
 import com.intellij.ui.awt.RelativePoint
 import com.intellij.util.ui.JBUI
@@ -32,6 +33,7 @@ import java.awt.Color
 import java.util.*
 import javax.swing.SwingUtilities
 import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.roundToInt
 
 class CmdlineOverlayManager(private val project: Project) {
@@ -101,12 +103,27 @@ class CmdlineOverlayManager(private val project: Project) {
     }
 
     private fun showOverlay(editor: Editor, mode: OverlayMode, history: CommandHistory) {
+        val visualSelectionRange = if (mode == OverlayMode.COMMAND && IdeaVimFacade.hasVisualSelection(editor)) {
+            val selectionModel = editor.selectionModel
+            if (selectionModel.hasSelection()) {
+                val start = min(selectionModel.selectionStart, selectionModel.selectionEnd)
+                val end = max(selectionModel.selectionStart, selectionModel.selectionEnd)
+                if (start >= 0 && end > start) TextRange(start, end) else null
+            } else {
+                null
+            }
+        } else {
+            null
+        }
+
         val searchCompletions =
             when (mode) {
-                OverlayMode.SEARCH_FORWARD, OverlayMode.SEARCH_BACKWARD, OverlayMode.COMMAND -> collectSearchWords(editor)
+                OverlayMode.SEARCH_FORWARD, OverlayMode.SEARCH_BACKWARD -> collectSearchWords(editor)
+                OverlayMode.COMMAND -> collectSearchWords(editor, visualSelectionRange)
             }
         val panel = CmdlineOverlayPanel(mode, history, editor, searchCompletions)
-        panel.setSearchInitialCaretOffset(editor.caretModel.primaryCaret.offset)
+        val initialOffset = visualSelectionRange?.startOffset ?: editor.caretModel.primaryCaret.offset
+        panel.setSearchInitialCaretOffset(initialOffset)
         panel.onSubmit = { text ->
             if (text.isNotEmpty()) {
                 history.add(text)
@@ -114,6 +131,9 @@ class CmdlineOverlayManager(private val project: Project) {
             closePopup()
             refocusEditor(editor)
             ApplicationManager.getApplication().invokeLater {
+                if (visualSelectionRange != null && hasVisualRangePrefix(text)) {
+                    IdeaVimFacade.reselectLastVisualSelection(editor)
+                }
                 IdeaVimFacade.replay(editor, mode, text)
                 IdeaVimFacade.commitSearchPreview(editor)
             }
@@ -214,86 +234,112 @@ class CmdlineOverlayManager(private val project: Project) {
         return editor
     }
 
-    private fun collectSearchWords(editor: Editor): List<SearchCompletionWord> {
+    private fun collectSearchWords(editor: Editor, limitRange: TextRange? = null): List<SearchCompletionWord> {
         val application = ApplicationManager.getApplication()
         val highlightEnabled = CmdlineOverlaySettings.highlightCompletionsEnabled()
         val extractor = {
             val document = editor.document
-            val text = document.charsSequence
-            val unique = LinkedHashMap<String, SearchCompletionWord>()
-            val defaultForeground =
-                editor.colorsScheme.defaultForeground
-                    ?: EditorColorsManager.getInstance().globalScheme.defaultForeground
-                    ?: JBColor.foreground()
-            val defaultAttributes = TextAttributes().apply {
-                foregroundColor = defaultForeground
-                fontType = Font.PLAIN
-            }
-            val maxWords = MAX_SEARCH_WORDS
-            var index = 0
-            var wordStart = -1
-            val length = text.length
+            val textRange = limitRange?.intersection(TextRange(0, document.textLength))
+                ?.takeIf { !it.isEmpty } ?: TextRange(0, document.textLength)
+            if (textRange.isEmpty) {
+                emptyList<SearchCompletionWord>()
+            } else {
+                val text = document.charsSequence.subSequence(textRange.startOffset, textRange.endOffset)
+                val baseOffset = textRange.startOffset
+                val unique = LinkedHashMap<String, SearchCompletionWord>()
+                val defaultForeground =
+                    editor.colorsScheme.defaultForeground
+                        ?: EditorColorsManager.getInstance().globalScheme.defaultForeground
+                        ?: JBColor.foreground()
+                val defaultAttributes = TextAttributes().apply {
+                    foregroundColor = defaultForeground
+                    fontType = Font.PLAIN
+                }
+                val maxWords = MAX_SEARCH_WORDS
+                var index = 0
+                var wordStart = -1
+                val length = text.length
 
-            fun flushWord(endExclusive: Int) {
-                if (wordStart == -1 || unique.size >= maxWords) {
-                    wordStart = -1
-                    return
-                }
-                if (endExclusive <= wordStart) {
-                    wordStart = -1
-                    return
-                }
-                val word = text.subSequence(wordStart, endExclusive).toString()
-                if (word.any { it.isLetterOrDigit() }) {
-                    val lowerKey = word.lowercase(Locale.ROOT)
-                    val key = buildString {
-                        append(lowerKey)
-                        append('\u0000')
-                        append(word)
+                fun flushWord(endExclusive: Int) {
+                    if (wordStart == -1 || unique.size >= maxWords) {
+                        wordStart = -1
+                        return
                     }
-                    val attributes = if (highlightEnabled) {
-                        resolveWordAttributes(editor, wordStart, defaultAttributes)
-                    } else {
-                        copyTextAttributes(defaultAttributes)
+                    if (endExclusive <= wordStart) {
+                        wordStart = -1
+                        return
                     }
-                    val completion = SearchCompletionWord(word, attributes)
-                    if (!highlightEnabled) {
-                        unique.putIfAbsent(key, completion)
-                    } else {
-                        val existing = unique[key]
-                        if (existing == null) {
-                            unique[key] = completion
-                        } else if (!isMeaningfulAttributes(existing.attributes, defaultAttributes) &&
-                            isMeaningfulAttributes(attributes, defaultAttributes)
-                        ) {
-                            unique[key] = completion
+                    val word = text.subSequence(wordStart, endExclusive).toString()
+                    if (word.any { it.isLetterOrDigit() }) {
+                        val lowerKey = word.lowercase(Locale.ROOT)
+                        val key = buildString {
+                            append(lowerKey)
+                            append('\u0000')
+                            append(word)
+                        }
+                        val attributes = if (highlightEnabled) {
+                            val docOffset = baseOffset + wordStart
+                            resolveWordAttributes(editor, docOffset, defaultAttributes)
+                        } else {
+                            copyTextAttributes(defaultAttributes)
+                        }
+                        val completion = SearchCompletionWord(word, attributes)
+                        if (!highlightEnabled) {
+                            unique.putIfAbsent(key, completion)
+                        } else {
+                            val existing = unique[key]
+                            if (existing == null) {
+                                unique[key] = completion
+                            } else if (!isMeaningfulAttributes(existing.attributes, defaultAttributes) &&
+                                isMeaningfulAttributes(attributes, defaultAttributes)
+                            ) {
+                                unique[key] = completion
+                            }
                         }
                     }
+                    wordStart = -1
                 }
-                wordStart = -1
-            }
 
-            while (index < length && unique.size < maxWords) {
-                val ch = text[index]
-                if (isWordChar(ch)) {
-                    if (wordStart == -1) {
-                        wordStart = index
+                while (index < length && unique.size < maxWords) {
+                    val ch = text[index]
+                    if (isWordChar(ch)) {
+                        if (wordStart == -1) {
+                            wordStart = index
+                        }
+                    } else {
+                        flushWord(index)
                     }
-                } else {
-                    flushWord(index)
+                    index += 1
                 }
-                index += 1
+                if (unique.size < maxWords) {
+                    flushWord(length)
+                }
+                unique.values.toList()
             }
-            if (unique.size < maxWords) {
-                flushWord(length)
-            }
-            unique.values.toList()
         }
         return if (application.isReadAccessAllowed) {
             extractor()
         } else {
             application.runReadAction<List<SearchCompletionWord>> { extractor() }
         }
+    }
+
+    private fun hasVisualRangePrefix(command: String): Boolean {
+        var index = 0
+        val length = command.length
+        while (index < length && command[index].isWhitespace()) {
+            index += 1
+        }
+        val prefix = "'<,'>"
+        if (length - index < prefix.length) {
+            return false
+        }
+        for (offset in prefix.indices) {
+            if (command[index + offset] != prefix[offset]) {
+                return false
+            }
+        }
+        return true
     }
 
     companion object {

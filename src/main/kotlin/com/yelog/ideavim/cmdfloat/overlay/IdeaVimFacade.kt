@@ -764,11 +764,26 @@ object IdeaVimFacade {
             return
         }
 
+        val keys = sequenceOf(mode.prefix) + payload.asSequence() + sequenceOf('\n')
+        dispatchKeys(editor, keys, "Failed to replay IdeaVim command sequence.")
+    }
+
+    fun typeKeys(editor: Editor, keys: CharSequence) {
+        if (!isAvailable() || keys.isEmpty()) {
+            return
+        }
+        dispatchKeys(editor, keys.asSequence(), "Failed to dispatch IdeaVim key sequence.")
+    }
+
+    fun reselectLastVisualSelection(editor: Editor) {
+        typeKeys(editor, "gv")
+    }
+
+    private fun dispatchKeys(editor: Editor, keys: Sequence<Char>, failureMessage: String) {
         try {
             val plugin = vimPluginInstanceMethod?.invoke(null) ?: return
             val keyHandler = vimPluginKeyMethod?.invoke(plugin) ?: return
             val dataContext = DataManager.getInstance().getDataContext(editor.contentComponent)
-            val keys = sequenceOf(mode.prefix) + payload.asSequence() + sequenceOf('\n')
             var handleKeySupported = true
             var fallbackLogged = false
             keys.forEach { character ->
@@ -789,7 +804,7 @@ object IdeaVimFacade {
                 }
             }
         } catch (throwable: Throwable) {
-            logger.warn("Failed to replay IdeaVim command sequence.", throwable)
+            logger.warn(failureMessage, throwable)
         }
     }
 

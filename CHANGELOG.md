@@ -7,6 +7,7 @@
 - feat: Support highlighting in the search completion list
 - feat: Support custom shortcuts in the completion list
 - feat: Deduplication in the search completion list is now case sensitive
+- fix: In visual mode, replacement search candidates come from the selected area
 
 ## 0.0.3
 
