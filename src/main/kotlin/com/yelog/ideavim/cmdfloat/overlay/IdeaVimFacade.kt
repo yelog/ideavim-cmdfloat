@@ -830,9 +830,13 @@ object IdeaVimFacade {
         val handlerClass = keyHandler.javaClass
         val methods = handleKeyMethodCache.computeIfAbsent(handlerClass) {
             handlerClass.methods.filter { method ->
-                method.name == "handleKey" &&
-                        method.parameterTypes.any { Editor::class.java.isAssignableFrom(it) } &&
-                        method.parameterTypes.any { KeyStroke::class.java.isAssignableFrom(it) }
+                if (method.name != "handleKey") {
+                    return@filter false
+                }
+
+                // 2025.2 起 IdeaVim 的 handleKey 改为使用 VimEditor/ExecutionContext 签名，不再必然包含 Editor。
+                // 这里仅要求能够识别按键参数，具体是否支持由 buildArguments 再次判定。
+                method.parameterTypes.any { KeyStroke::class.java.isAssignableFrom(it) }
             }.sortedBy { it.parameterCount }
         }
 
