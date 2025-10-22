@@ -8,6 +8,7 @@
 - feat: Support custom shortcuts in the completion list
 - feat: Deduplication in the search completion list is now case sensitive
 - fix: In visual mode, replacement search candidates come from the selected area
+- feat: Support controlling search execution in files exceeding 3000 lines through `let g:cmdfloat_search_completion_line_limit = 3000`
 
 ## 0.0.3
 

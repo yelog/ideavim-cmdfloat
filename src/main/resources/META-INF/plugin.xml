@@ -34,6 +34,7 @@ https://plugins.jetbrains.com/docs/intellij/plugin-configuration-file.html -->
         <li>feat: Support custom shortcuts in the completion list</li>
         <li>feat: Deduplication in the search completion list is now case sensitive</li>
         <li>fix: In visual mode, replacement search candidates come from the selected area</li>
+        <li>feat: Support controlling search execution in files exceeding 3000 lines through <code>let g:cmdfloat_search_completion_line_limit = 3000</code></li>
         </ul>
         <h2>0.0.3</h2>
         <ul>
