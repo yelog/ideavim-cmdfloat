@@ -235,10 +235,14 @@ class CmdlineOverlayManager(private val project: Project) {
     }
 
     private fun collectSearchWords(editor: Editor, limitRange: TextRange? = null): List<SearchCompletionWord> {
+        val document = editor.document
+        val lineLimit = CmdlineOverlaySettings.searchCompletionLineLimit()
+        if (lineLimit > 0 && document.lineCount > lineLimit) {
+            return emptyList()
+        }
         val application = ApplicationManager.getApplication()
         val highlightEnabled = CmdlineOverlaySettings.highlightCompletionsEnabled()
         val extractor = {
-            val document = editor.document
             val textRange = limitRange?.intersection(TextRange(0, document.textLength))
                 ?.takeIf { !it.isEmpty } ?: TextRange(0, document.textLength)
             if (textRange.isEmpty) {

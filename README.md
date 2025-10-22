@@ -72,6 +72,16 @@ let g:cmdfloat_highlight_completions = 0
 
 Any truthy value (`1`, `on`, `true`, `yes`) keeps the extra styling enabled; falsy values turn it off while preserving the match indicators for your search query.
 
+### Search Completion Limits
+
+Search completions stay enabled for every file by default. If large buffers feel sluggish, configure a line-count threshold in `.ideavimrc` to skip completions once the document exceeds that size:
+
+```vim
+let g:cmdfloat_search_completion_line_limit = 3000
+```
+
+Use any positive value to impose a cap; keep it at `0` (or negative) to allow completions in all files.
+
 ## Requirements
 - JetBrains IDE 2024.3.6 or newer.
 - IdeaVim 2.10.0 or newer. The overlay disables itself if IdeaVim is missing.

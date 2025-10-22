@@ -316,6 +316,14 @@ object IdeaVimFacade {
         return convertToBoolean(raw)
     }
 
+    fun readGlobalVariableInt(name: String): Int? {
+        if (!isAvailable()) {
+            return null
+        }
+        val raw = readGlobalVariableValue(name) ?: return null
+        return convertToInt(raw)
+    }
+
     private fun readGlobalVariableValue(name: String): Any? {
         val variableMethod = vimPluginVariableServiceMethod ?: return null
         val getter = variableServiceGlobalGetterMethod ?: return null
@@ -461,6 +469,18 @@ object IdeaVimFacade {
             is Number -> completion.toInt() != 0
             is CharSequence -> parseBooleanLiteral(completion.toString())
             else -> parseBooleanLiteral(completion.toString())
+        }
+    }
+
+    private fun convertToInt(value: Any?): Int? {
+        val completion = unwrapOptional(value) ?: return null
+        return when (completion) {
+            is Number -> completion.toInt()
+            is Char -> completion.code
+            else -> {
+                val text = convertToString(completion) ?: return null
+                text.toIntOrNull()
+            }
         }
     }
 
