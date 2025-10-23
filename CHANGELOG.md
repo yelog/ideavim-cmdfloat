@@ -2,6 +2,10 @@
 
 # IdeaVim-CmdFloat Changelog
 
+## 0.0.5
+
+- feat: Added expression floating window, triggered in insert mode by pressing `Ctrl-R =`
+
 ## 0.0.4
 
 - feat: Support highlighting in the search completion list

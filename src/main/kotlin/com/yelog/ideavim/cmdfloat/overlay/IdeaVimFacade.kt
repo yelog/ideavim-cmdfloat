@@ -187,18 +187,21 @@ object IdeaVimFacade {
         return modeName == "COMMAND"
     }
 
-    fun isEditorCommandOverlayAllowed(editor: Editor): Boolean {
+    fun isOverlayAllowed(editor: Editor, overlayMode: OverlayMode): Boolean {
         val modeName = editorModeName(editor) ?: return false
-        if (modeName == "COMMAND") {
-            return true
+        return when (overlayMode) {
+            OverlayMode.COMMAND,
+            OverlayMode.SEARCH_FORWARD,
+            OverlayMode.SEARCH_BACKWARD -> {
+                modeName == "COMMAND" ||
+                        modeName.startsWith("VISUAL") ||
+                        modeName == "SELECT"
+            }
+
+            OverlayMode.EXPRESSION -> {
+                modeName.contains("INSERT") || modeName.contains("REPLACE")
+            }
         }
-        if (modeName.startsWith("VISUAL")) {
-            return true
-        }
-        if (modeName == "SELECT") {
-            return true
-        }
-        return false
     }
 
     fun hasVisualSelection(editor: Editor): Boolean {
@@ -784,8 +787,39 @@ object IdeaVimFacade {
             return
         }
 
-        val keys = sequenceOf(mode.prefix) + payload.asSequence() + sequenceOf('\n')
+        val keys = mode.prefix.asSequence() + payload.asSequence() + sequenceOf('\n')
         dispatchKeys(editor, keys, "Failed to replay IdeaVim command sequence.")
+    }
+
+    fun replayExpression(editor: Editor, expression: String, includeCtrlR: Boolean) {
+        if (!isAvailable()) {
+            return
+        }
+        val keys = sequence {
+            if (includeCtrlR) {
+                yield('\u0012')
+            }
+            yield('=')
+            for (ch in expression) {
+                yield(ch)
+            }
+            yield('\r')
+        }
+        dispatchKeys(editor, keys, "Failed to replay IdeaVim expression input.")
+    }
+
+    fun beginExpressionInput(editor: Editor) {
+        if (!isAvailable()) {
+            return
+        }
+        dispatchKeys(editor, sequenceOf('\u0012'), "Failed to initiate IdeaVim expression input.")
+    }
+
+    fun cancelExpressionInput(editor: Editor) {
+        if (!isAvailable()) {
+            return
+        }
+        dispatchKeys(editor, sequenceOf('\u001b'), "Failed to cancel IdeaVim expression input.")
     }
 
     fun typeKeys(editor: Editor, keys: CharSequence) {
@@ -931,8 +965,15 @@ object IdeaVimFacade {
     }
 
     private fun toKeyStroke(character: Char): KeyStroke {
-        return when (character) {
-            '\n' -> KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0)
+        return when {
+            character == '\n' || character == '\r' -> KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0)
+            character == '\u001b' -> KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0)
+            character.code in 1..26 -> {
+                val base = 'A'.code + character.code - 1
+                val keyCode = KeyEvent.getExtendedKeyCodeForChar(base)
+                KeyStroke.getKeyStroke(keyCode, InputEvent.CTRL_DOWN_MASK)
+            }
+
             else -> KeyStroke.getKeyStroke(character)
         }
     }
@@ -941,8 +982,13 @@ object IdeaVimFacade {
         val component = editor.contentComponent
         val queue = IdeEventQueue.getInstance()
         val timestamp = System.currentTimeMillis()
-        val keyCode = when (character) {
-            '\n' -> KeyEvent.VK_ENTER
+        val keyCode = when {
+            character == '\n' || character == '\r' -> KeyEvent.VK_ENTER
+            character.code in 1..26 -> {
+                val base = 'A'.code + character.code - 1
+                KeyEvent.getExtendedKeyCodeForChar(base)
+            }
+
             else -> KeyEvent.getExtendedKeyCodeForChar(character.code)
         }.takeIf { it != KeyEvent.VK_UNDEFINED } ?: KeyEvent.VK_UNDEFINED
         val modifiers = deriveModifiers(character)
@@ -976,6 +1022,12 @@ object IdeaVimFacade {
     }
 
     private fun deriveModifiers(character: Char): Int {
+        if (character == '\n' || character == '\r') {
+            return 0
+        }
+        if (character.code in 1..26) {
+            return InputEvent.CTRL_DOWN_MASK
+        }
         if (character.isUpperCase()) {
             return InputEvent.SHIFT_DOWN_MASK
         }

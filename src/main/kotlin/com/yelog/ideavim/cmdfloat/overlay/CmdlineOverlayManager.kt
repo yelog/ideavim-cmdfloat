@@ -41,11 +41,17 @@ class CmdlineOverlayManager(private val project: Project) {
     private val logger = Logger.getInstance(CmdlineOverlayManager::class.java)
     private val commandHistory = CommandHistory()
     private val searchHistory = CommandHistory()
+    private val expressionHistory = CommandHistory()
+    private var expressionReplayNeedsCtrlR = true
 
     private var popup: JBPopup? = null
     private var overlayComponent: CmdlineOverlayPanel? = null
     private var activeMode: OverlayMode? = null
     private var activeEditor: Editor? = null
+
+    fun prepareExpressionReplay(needsCtrlR: Boolean) {
+        expressionReplayNeedsCtrlR = needsCtrlR
+    }
 
     fun handleTrigger(mode: OverlayMode): Boolean {
         if (popup != null) {
@@ -54,7 +60,7 @@ class CmdlineOverlayManager(private val project: Project) {
         }
 
         val editor = currentEditor() ?: return false
-        if (!IdeaVimFacade.isEditorCommandOverlayAllowed(editor)) {
+        if (!IdeaVimFacade.isOverlayAllowed(editor, mode)) {
             logger.debug("Editor not in a compatible IdeaVim mode; skip overlay display.")
             return false
         }
@@ -62,8 +68,12 @@ class CmdlineOverlayManager(private val project: Project) {
         val history = when (mode.historyKey) {
             HistoryKey.COMMAND -> commandHistory
             HistoryKey.SEARCH -> searchHistory
+            HistoryKey.EXPRESSION -> expressionHistory
         }
 
+        if (mode != OverlayMode.EXPRESSION) {
+            expressionReplayNeedsCtrlR = true
+        }
         showOverlay(editor, mode, history)
         return true
     }
@@ -116,11 +126,11 @@ class CmdlineOverlayManager(private val project: Project) {
             null
         }
 
-        val searchCompletions =
-            when (mode) {
-                OverlayMode.SEARCH_FORWARD, OverlayMode.SEARCH_BACKWARD -> collectSearchWords(editor)
-                OverlayMode.COMMAND -> collectSearchWords(editor, visualSelectionRange)
-            }
+        val searchCompletions = when (mode) {
+            OverlayMode.SEARCH_FORWARD, OverlayMode.SEARCH_BACKWARD -> collectSearchWords(editor)
+            OverlayMode.COMMAND -> collectSearchWords(editor, visualSelectionRange)
+            OverlayMode.EXPRESSION -> emptyList()
+        }
         val panel = CmdlineOverlayPanel(mode, history, editor, searchCompletions)
         val initialOffset = visualSelectionRange?.startOffset ?: editor.caretModel.primaryCaret.offset
         panel.setSearchInitialCaretOffset(initialOffset)
@@ -134,13 +144,28 @@ class CmdlineOverlayManager(private val project: Project) {
                 if (visualSelectionRange != null && hasVisualRangePrefix(text)) {
                     IdeaVimFacade.reselectLastVisualSelection(editor)
                 }
-                IdeaVimFacade.replay(editor, mode, text)
-                IdeaVimFacade.commitSearchPreview(editor)
+                if (mode == OverlayMode.EXPRESSION) {
+                    IdeaVimFacade.replayExpression(editor, text, expressionReplayNeedsCtrlR)
+                } else {
+                    IdeaVimFacade.replay(editor, mode, text)
+                }
+                if (mode == OverlayMode.SEARCH_FORWARD || mode == OverlayMode.SEARCH_BACKWARD) {
+                    IdeaVimFacade.commitSearchPreview(editor)
+                }
+                if (mode == OverlayMode.EXPRESSION) {
+                    expressionReplayNeedsCtrlR = true
+                }
             }
         }
         panel.onCancel = {
             closePopup()
             refocusEditor(editor)
+            if (mode == OverlayMode.EXPRESSION) {
+                if (!expressionReplayNeedsCtrlR) {
+                    IdeaVimFacade.cancelExpressionInput(editor)
+                }
+                expressionReplayNeedsCtrlR = true
+            }
         }
         if (mode == OverlayMode.SEARCH_FORWARD || mode == OverlayMode.SEARCH_BACKWARD) {
             IdeaVimFacade.resetSearchPreview()
@@ -199,12 +224,20 @@ class CmdlineOverlayManager(private val project: Project) {
 
     private fun closePopup(requestCancel: Boolean = true) {
         val panel = overlayComponent
+        val mode = activeMode
+        val editor = activeEditor
+        val shouldCancelExpression =
+            mode == OverlayMode.EXPRESSION && !expressionReplayNeedsCtrlR && !requestCancel && editor != null
         val currentPopup = popup
         popup = null
         overlayComponent = null
         activeMode = null
         activeEditor = null
         panel?.notifyClosed()
+        if (shouldCancelExpression) {
+            IdeaVimFacade.cancelExpressionInput(editor!!)
+            expressionReplayNeedsCtrlR = true
+        }
         if (requestCancel) {
             currentPopup?.cancel()
         }
@@ -457,10 +490,10 @@ private fun applyRangeHighlighterAttributes(
     scheme: EditorColorsScheme,
     target: TextAttributes,
 ) {
-    val attrs = when (highlighter) {
-        is RangeHighlighterEx -> highlighter.getTextAttributes(scheme)
-        else -> highlighter.textAttributes
-    } ?: return
+    val attrs = highlighter.getTextAttributes(scheme)
+        ?: (highlighter as? RangeHighlighterEx)?.forcedTextAttributes
+        ?: highlighter.textAttributesKey?.let { scheme.getAttributes(it) }
+        ?: return
     applyAttributes(target, attrs)
 }
 
@@ -478,13 +511,15 @@ private fun isWordChar(ch: Char): Boolean {
     return ch.isLetterOrDigit() || ch == '-' || ch == '_'
 }
 
-enum class OverlayMode(val header: String, val prefix: Char, val historyKey: HistoryKey) {
-    COMMAND("CmdLine", ':', HistoryKey.COMMAND),
-    SEARCH_FORWARD("Search", '/', HistoryKey.SEARCH),
-    SEARCH_BACKWARD("Search", '?', HistoryKey.SEARCH),
+enum class OverlayMode(val header: String, val prefix: String, val historyKey: HistoryKey) {
+    COMMAND("CmdLine", ":", HistoryKey.COMMAND),
+    SEARCH_FORWARD("Search", "/", HistoryKey.SEARCH),
+    SEARCH_BACKWARD("Search", "?", HistoryKey.SEARCH),
+    EXPRESSION("Expr", "\u0012=", HistoryKey.EXPRESSION),
 }
 
 enum class HistoryKey {
     COMMAND,
     SEARCH,
+    EXPRESSION,
 }

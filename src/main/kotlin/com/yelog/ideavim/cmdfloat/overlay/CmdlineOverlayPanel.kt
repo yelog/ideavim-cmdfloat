@@ -69,6 +69,8 @@ class CmdlineOverlayPanel(
                 focusComponent,
                 searchCompletions,
             )
+
+            OverlayMode.EXPRESSION -> null
         }
 
         val inputPanel = JBPanel<JBPanel<*>>(java.awt.BorderLayout()).apply {
@@ -234,45 +236,40 @@ class CmdlineOverlayPanel(
     }
 
     private fun createPrefixLabel(): JBLabel {
-        val isSearchMode = mode == OverlayMode.SEARCH_FORWARD || mode == OverlayMode.SEARCH_BACKWARD
         val inputHeight = JBUI.scale(28)
-        val label = JBLabel().apply {
-            // 搜索模式：左右都加内边距，防止组合图标（放大镜+箭头）被裁剪
-            // 之前右侧无内边距且总宽度仅 34，会因为 border 占用导致箭头显示不全
-            val left = if (isSearchMode) 4 else 6
-            val right = if (isSearchMode) 0 else 0
-            border = JBUI.Borders.empty(0, left, 0, right)
+        return JBLabel().apply {
+            isOpaque = false
             foreground = focusComponent.foreground
             font = JBFont.label().deriveFont(Font.BOLD, scaledFontSize(16f))
-            // 动态计算搜索模式前缀宽度：放大镜实际宽度 + gap(=1 scaled) + 箭头宽度 + 左右内边距
-            // 避免额外的空白把文本框光标推远
-            if (isSearchMode) {
-                val searchIconWidth = AllIcons.Actions.Search.iconWidth
-                val gap = JBUI.scale(1)
-                val arrowWidth = JBUI.scale(8) // 与 createSearchDirectionIcon 中保持一致
-                val labelWidth = searchIconWidth + gap + arrowWidth + left + right
-                preferredSize = Dimension(JBUI.scale(labelWidth), inputHeight)
-            } else {
-                preferredSize = Dimension(JBUI.scale(24), inputHeight)
+            when (mode) {
+                OverlayMode.SEARCH_FORWARD, OverlayMode.SEARCH_BACKWARD -> {
+                    val left = JBUI.scale(4)
+                    border = JBUI.Borders.empty(0, left, 0, 0)
+                    val searchIconWidth = AllIcons.Actions.Search.iconWidth
+                    val gap = JBUI.scale(1)
+                    val arrowWidth = JBUI.scale(8)
+                    val labelWidth = searchIconWidth + gap + arrowWidth + left
+                    preferredSize = Dimension(JBUI.scale(labelWidth), inputHeight)
+                    icon = createSearchDirectionIcon(backward = mode == OverlayMode.SEARCH_BACKWARD)
+                }
+
+                OverlayMode.EXPRESSION -> {
+                    border = JBUI.Borders.empty(0, JBUI.scale(6), 0, JBUI.scale(6))
+                    icon = AllIcons.Debugger.EvaluateExpression
+                    iconTextGap = 0
+                    toolTipText = "表达式输入"
+                    preferredSize = Dimension(JBUI.scale(28), inputHeight)
+                }
+
+                OverlayMode.COMMAND -> {
+                    val promptChar = '\uF054'
+                    text = if (font.canDisplay(promptChar)) promptChar.toString() else "❯"
+                    toolTipText = "命令输入"
+                    border = JBUI.Borders.empty(0, 14, 0, 0)
+                    preferredSize = Dimension(JBUI.scale(26), inputHeight)
+                }
             }
-            isOpaque = false
         }
-        if (isSearchMode) {
-            label.icon = when (mode) {
-                OverlayMode.SEARCH_FORWARD -> createSearchDirectionIcon(backward = false)
-                OverlayMode.SEARCH_BACKWARD -> createSearchDirectionIcon(backward = true)
-                else -> AllIcons.Actions.Search
-            }
-        } else {
-            // 调整命令模式前缀符号的位置：进一步右移以与搜索图标视觉对齐
-            val promptChar = '\uF054'
-            label.text = if (label.font.canDisplay(promptChar)) promptChar.toString() else "❯"
-            label.toolTipText = "命令输入"
-            // 增加左侧缩进并适度增宽以居中该窄字符
-            label.border = JBUI.Borders.empty(0, 14, 0, 0)
-            label.preferredSize = Dimension(JBUI.scale(26), inputHeight)
-        }
-        return label
     }
 
     /**
