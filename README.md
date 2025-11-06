@@ -76,15 +76,13 @@ vmap ; <Action>(cmdfloat.command)
 
 These mappings let `r` start a forward search, `R` start a backward search, and keep `:` for command mode. You can use the same actions inside `vmap`, `imap`, or multi-key sequences (for example `<Leader>/`) just as you would with other IdeaVim actions. IdeaVim 2.5.0 or newer is required for the `<Action>(...)` syntax.
 
-If you no longer want CmdFloat to intercept the default `:`, `/`, or `?` keys, disable any of the triggers directly from `.ideavimrc`:
+If you no longer want CmdFloat to intercept the default `:`, `/`, or `?` keys, disable the triggers directly from `.ideavimrc`:
 
 ```vim
-let g:cmdfloat_disable_default_command = 1
-let g:cmdfloat_disable_default_search = 1
-let g:cmdfloat_disable_default_search_backward = 1
+let g:cmdfloat_disable_default_trigger = 1
 ```
 
-Any truthy value turns the corresponding trigger off; omit the variable or set it to `0`/`false` to keep the default binding active.
+Any truthy value turns every built-in trigger off; omit the variable or set it to `0`/`false` to keep the default bindings active.
 
 ### Highlight Rendering
 
