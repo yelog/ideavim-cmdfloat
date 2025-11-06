@@ -2,6 +2,10 @@
 
 # IdeaVim-CmdFloat Changelog
 
+## 0.0.7
+
+- feat: Support disabling default shortcut key interception
+
 ## 0.0.6
 
 - feat: When the number of lines exceeds the value set by `let g:cmdfloat_search_completion_line_limit = 3000`, disable real-time search as well as the total count and index query features

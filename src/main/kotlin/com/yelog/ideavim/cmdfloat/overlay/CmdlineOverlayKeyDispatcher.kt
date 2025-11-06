@@ -131,7 +131,7 @@ class CmdlineOverlayKeyDispatcher(
     }
 
     private fun KeyEvent.detectOverlayMode(): OverlayMode? {
-        return when (keyChar) {
+        val candidate = when (keyChar) {
             ':' -> OverlayMode.COMMAND
             '/' -> OverlayMode.SEARCH_FORWARD
             '?' -> OverlayMode.SEARCH_BACKWARD
@@ -143,5 +143,6 @@ class CmdlineOverlayKeyDispatcher(
                 else -> null
             }
         }
+        return candidate?.takeIf { CmdlineOverlaySettings.isDefaultTriggerEnabled(it) }
     }
 }
