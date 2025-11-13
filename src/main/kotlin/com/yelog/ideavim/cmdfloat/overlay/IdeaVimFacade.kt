@@ -51,9 +51,44 @@ object IdeaVimFacade {
         val clazz = vimPluginClass ?: return@run null
         runCatching { clazz.getMethod("getOptionGroup") }.getOrNull()
     }
+    private val vimPluginRegisterGroupMethod = run {
+        val clazz = vimPluginClass ?: return@run null
+        runCatching {
+            clazz.getMethod("getRegister")
+        }.getOrNull()
+    }
     private val vimPluginVariableServiceMethod = run {
         val clazz = vimPluginClass ?: return@run null
         runCatching { clazz.getMethod("getVariableService") }.getOrNull()
+    }
+    private val registerGroupClass = vimPluginRegisterGroupMethod?.returnType
+    private val registerGroupGetRegisterWithContextMethod = run {
+        val groupClass = registerGroupClass ?: return@run null
+        groupClass.methods.firstOrNull { method ->
+            method.name == "getRegister" &&
+                    method.parameterCount == 3 &&
+                    matchesType(method.parameterTypes[0], vimEditorClass) &&
+                    matchesType(method.parameterTypes[1], executionContextClass) &&
+                    isCharParameter(method.parameterTypes[2])
+        }
+    }
+    private val registerGroupGetRegisterMethod = run {
+        val groupClass = registerGroupClass ?: return@run null
+        groupClass.methods.firstOrNull { method ->
+            method.name == "getRegister" &&
+                    method.parameterCount == 1 &&
+                    isCharParameter(method.parameterTypes[0])
+        }
+    }
+    private val registerClass = registerGroupGetRegisterWithContextMethod?.returnType
+        ?: registerGroupGetRegisterMethod?.returnType
+    private val registerGetTextMethod = run {
+        val clazz = registerClass ?: return@run null
+        runCatching { clazz.getMethod("getText") }.getOrNull()
+    }
+    private val registerPrintableStringMethod = run {
+        val clazz = registerClass ?: return@run null
+        runCatching { clazz.getMethod("getPrintableString") }.getOrNull()
     }
     private val variableServiceClass = vimPluginVariableServiceMethod?.returnType
     private val variableServiceGlobalGetterMethod = run {
@@ -834,6 +869,23 @@ object IdeaVimFacade {
         typeKeys(editor, "gv")
     }
 
+    fun readRegister(editor: Editor?, register: Char): String? {
+        if (!isAvailable()) {
+            return null
+        }
+        val plugin = vimPluginInstanceMethod ?: return null
+        val registerAccessor = vimPluginRegisterGroupMethod ?: return null
+        return try {
+            val pluginInstance = plugin.invoke(null) ?: return null
+            val registerGroup = registerAccessor.invoke(pluginInstance) ?: return null
+            val registerInstance = obtainRegisterInstance(registerGroup, editor, register) ?: return null
+            extractRegisterText(registerInstance)
+        } catch (throwable: Throwable) {
+            logger.debug("Failed to read IdeaVim register $register.", throwable)
+            null
+        }
+    }
+
     private fun dispatchKeys(editor: Editor, keys: Sequence<Char>, failureMessage: String) {
         try {
             val plugin = vimPluginInstanceMethod?.invoke(null) ?: return
@@ -1115,6 +1167,59 @@ object IdeaVimFacade {
             logger.warn("Unable to construct IdeaVim ExecutionContext wrapper; command overlay replay may not function.")
         }
         return result
+    }
+
+    private fun obtainRegisterInstance(group: Any, editor: Editor?, register: Char): Any? {
+        registerGroupGetRegisterWithContextMethod?.let { method ->
+            if (editor != null && vimEditorClass != null && executionContextClass != null) {
+                val vimEditor = createVimEditorWrapper(editor)
+                val dataContext = DataManager.getInstance().getDataContext(editor.contentComponent)
+                val executionContext = createExecutionContextWrapper(editor, dataContext)
+                if (vimEditor != null && executionContext != null) {
+                    return tryInvoke(method, group, vimEditor, executionContext, register)
+                }
+            }
+        }
+        return registerGroupGetRegisterMethod?.let { method ->
+            tryInvoke(method, group, register)
+        }
+    }
+
+    private fun extractRegisterText(register: Any): String? {
+        registerGetTextMethod?.let { method ->
+            val text = tryInvoke(method, register) as? String
+            if (text != null) {
+                return text
+            }
+        }
+        registerPrintableStringMethod?.let { method ->
+            val printable = tryInvoke(method, register) as? String
+            if (printable != null) {
+                return printable
+            }
+        }
+        return null
+    }
+
+    private fun matchesType(type: Class<*>, candidate: Class<*>?): Boolean {
+        candidate ?: return false
+        return type == candidate || type.isAssignableFrom(candidate) || candidate.isAssignableFrom(type)
+    }
+
+    private fun isCharParameter(type: Class<*>): Boolean {
+        return type == Character.TYPE || type == java.lang.Character::class.java
+    }
+
+    private fun tryInvoke(method: Method, target: Any, vararg args: Any?): Any? {
+        return try {
+            if (!method.canAccess(target)) {
+                method.isAccessible = true
+            }
+            method.invoke(target, *args)
+        } catch (throwable: Throwable) {
+            logger.debug("Failed to invoke IdeaVim method ${method.name}.", throwable)
+            null
+        }
     }
 
     private fun tryCreateInstance(

@@ -20,8 +20,11 @@ import java.awt.Graphics2D
 import java.awt.event.ActionEvent
 import java.awt.event.HierarchyEvent
 import java.awt.event.HierarchyListener
+import java.awt.event.KeyAdapter
+import java.awt.event.KeyEvent
 import java.util.*
 import javax.swing.*
+import javax.swing.UIManager
 import javax.swing.event.DocumentEvent
 import javax.swing.event.DocumentListener
 import kotlin.math.min
@@ -58,6 +61,8 @@ class CmdlineOverlayPanel(
     private var searchInitialCaretOffset: Int = -1
     private var commandPreviewActive = false
     private val searchResultLabel: JBLabel?
+    private var awaitingRegisterPaste = false
+    private var skipRegisterTriggerTyped = false
 
     init {
         val scheme = EditorColorsManager.getInstance().globalScheme
@@ -414,6 +419,8 @@ class CmdlineOverlayPanel(
         actionMap.put(ACTION_COMPLETION_PREVIOUS, completionPreviousAction)
         inputMap.put(KeyStroke.getKeyStroke("TAB"), ACTION_COMPLETION_NEXT)
         actionMap.put(ACTION_COMPLETION_NEXT, completionNextAction)
+
+        installRegisterPasteHandler(textField)
     }
 
     private fun navigateHistory(previous: Boolean, textField: JBTextField) {
@@ -744,6 +751,87 @@ class CmdlineOverlayPanel(
 
     private fun isSearchMode(): Boolean {
         return mode == OverlayMode.SEARCH_FORWARD || mode == OverlayMode.SEARCH_BACKWARD
+    }
+
+    private fun supportsRegisterInput(): Boolean {
+        return mode != OverlayMode.EXPRESSION
+    }
+
+    private fun installRegisterPasteHandler(textField: JBTextField) {
+        if (!supportsRegisterInput()) {
+            return
+        }
+        textField.addKeyListener(object : KeyAdapter() {
+            override fun keyPressed(event: KeyEvent) {
+                if (!supportsRegisterInput()) {
+                    awaitingRegisterPaste = false
+                    return
+                }
+                if (!awaitingRegisterPaste &&
+                    event.keyCode == KeyEvent.VK_R &&
+                    event.isControlDown &&
+                    !event.isAltDown &&
+                    !event.isMetaDown
+                ) {
+                    awaitingRegisterPaste = true
+                    skipRegisterTriggerTyped = true
+                    event.consume()
+                    return
+                }
+                if (awaitingRegisterPaste && event.keyCode == KeyEvent.VK_ESCAPE) {
+                    awaitingRegisterPaste = false
+                    skipRegisterTriggerTyped = false
+                    event.consume()
+                    return
+                }
+                if (awaitingRegisterPaste &&
+                    event.keyChar == KeyEvent.CHAR_UNDEFINED &&
+                    event.keyCode != KeyEvent.VK_SHIFT &&
+                    event.keyCode != KeyEvent.VK_CONTROL &&
+                    event.keyCode != KeyEvent.VK_ALT &&
+                    event.keyCode != KeyEvent.VK_META
+                ) {
+                    awaitingRegisterPaste = false
+                    skipRegisterTriggerTyped = false
+                }
+            }
+
+            override fun keyTyped(event: KeyEvent) {
+                if (!supportsRegisterInput() || !awaitingRegisterPaste) {
+                    return
+                }
+                event.consume()
+                if (skipRegisterTriggerTyped) {
+                    skipRegisterTriggerTyped = false
+                    return
+                }
+                val registerChar = event.resolveRegisterChar() ?: return
+                awaitingRegisterPaste = false
+                pasteRegisterIntoField(registerChar, textField)
+            }
+        })
+    }
+
+    private fun pasteRegisterIntoField(register: Char, textField: JBTextField) {
+        val content = IdeaVimFacade.readRegister(editor, register)
+        if (content == null) {
+            UIManager.getLookAndFeel().provideErrorFeedback(textField)
+            return
+        }
+        textField.replaceSelection(content)
+    }
+
+    private fun KeyEvent.resolveRegisterChar(): Char? {
+        val ch = keyChar
+        if (ch == KeyEvent.CHAR_UNDEFINED) {
+            return null
+        }
+        return if (ch.code in 1..26) {
+            val base = if (isShiftDown) 'A' else 'a'
+            (base.code + ch.code - 1).toChar()
+        } else {
+            ch
+        }
     }
 
     private interface CompletionSupport {

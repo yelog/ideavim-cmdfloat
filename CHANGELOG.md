@@ -4,6 +4,7 @@
 
 ## 0.0.7
 
+- feat: Support Vim registers like `c-r0` in the floating window
 - feat: Support disabling default shortcut key interception
 
 ## 0.0.6
