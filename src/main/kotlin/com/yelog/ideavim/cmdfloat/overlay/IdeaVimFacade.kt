@@ -47,6 +47,7 @@ object IdeaVimFacade {
     private val vimPluginKeyMethod = vimPluginClass?.getMethod("getKey")
     private val vimPluginSearchMethod = vimPluginClass?.getMethod("getSearch")
     private val vimPluginEditorMethod = vimPluginClass?.getMethod("getEditor")
+    private val vimPluginIsEnabledMethod = vimPluginClass?.getMethod("isEnabled")
     private val vimPluginOptionGroupMethod = run {
         val clazz = vimPluginClass ?: return@run null
         runCatching { clazz.getMethod("getOptionGroup") }.getOrNull()
@@ -214,7 +215,20 @@ object IdeaVimFacade {
     )
 
     fun isAvailable(): Boolean {
-        return vimPluginClass != null && commandStateClass != null && vimPluginKeyMethod != null
+        return vimPluginClass != null &&
+                commandStateClass != null &&
+                vimPluginKeyMethod != null &&
+                isVimPluginEnabled()
+    }
+
+    fun isVimPluginEnabled(): Boolean {
+        val method = vimPluginIsEnabledMethod ?: return false
+
+        return try {
+            method.invoke(null) == true
+        } catch (_: Throwable) {
+            false
+        }
     }
 
     fun isEditorInNormalMode(editor: Editor): Boolean {
