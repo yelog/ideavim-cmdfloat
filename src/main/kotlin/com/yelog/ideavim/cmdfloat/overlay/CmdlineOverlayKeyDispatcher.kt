@@ -11,6 +11,8 @@ class CmdlineOverlayKeyDispatcher(
     private var awaitingExpressionTrigger = false
 
     private var previousKeyAwaitsCharArgument = false
+    private var inExtendedSearchMode = false
+    private var extendedSearchModeTimestamp = 0L
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         return when (event.id) {
@@ -110,15 +112,58 @@ class CmdlineOverlayKeyDispatcher(
             return false
         }
 
+        if (isInExtendedSearchMode()) {
+            return false
+        }
+
         val overlayMode = event.detectOverlayMode() ?: return false
         return manager.handleTrigger(overlayMode)
+    }
+
+    private fun isInExtendedSearchMode(): Boolean {
+        if (!inExtendedSearchMode) {
+            return false
+        }
+        val elapsed = System.currentTimeMillis() - extendedSearchModeTimestamp
+        if (elapsed > EXTENDED_SEARCH_TIMEOUT_MS) {
+            inExtendedSearchMode = false
+            return false
+        }
+        return true
     }
 
     private fun updateCharArgumentTracking(event: KeyEvent) {
         if (event.isModifierKey()) {
             return
         }
-        previousKeyAwaitsCharArgument = event.isCharArgumentCommand()
+
+        if (event.isSearchTerminator()) {
+            inExtendedSearchMode = false
+            previousKeyAwaitsCharArgument = false
+            return
+        }
+
+        if (event.isExtendedSearchCommand()) {
+            inExtendedSearchMode = true
+            extendedSearchModeTimestamp = System.currentTimeMillis()
+            previousKeyAwaitsCharArgument = false
+            return
+        }
+
+        if (!inExtendedSearchMode) {
+            previousKeyAwaitsCharArgument = event.isSingleCharArgumentCommand()
+        }
+    }
+
+    private fun KeyEvent.isSearchTerminator(): Boolean {
+        return keyCode == KeyEvent.VK_ENTER || keyCode == KeyEvent.VK_ESCAPE
+    }
+
+    private fun KeyEvent.isExtendedSearchCommand(): Boolean {
+        if (isControlDown || isAltDown || isMetaDown) {
+            return false
+        }
+        return keyChar == 's' || keyChar == 'S'
     }
 
     private fun KeyEvent.isModifierKey(): Boolean {
@@ -128,7 +173,7 @@ class CmdlineOverlayKeyDispatcher(
             keyCode == KeyEvent.VK_META
     }
 
-    private fun KeyEvent.isCharArgumentCommand(): Boolean {
+    private fun KeyEvent.isSingleCharArgumentCommand(): Boolean {
         if (isControlDown || isAltDown || isMetaDown) {
             return false
         }
@@ -183,5 +228,9 @@ class CmdlineOverlayKeyDispatcher(
             }
         }
         return candidate?.takeIf { CmdlineOverlaySettings.isDefaultTriggerEnabled(it) }
+    }
+
+    companion object {
+        private const val EXTENDED_SEARCH_TIMEOUT_MS = 10_000L
     }
 }
