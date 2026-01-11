@@ -10,10 +10,16 @@ class CmdlineOverlayKeyDispatcher(
     private var suppressNextTyped = false
     private var awaitingExpressionTrigger = false
 
+    private var previousKeyAwaitsCharArgument = false
+
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         return when (event.id) {
             KeyEvent.KEY_PRESSED -> handlePressed(event)
             KeyEvent.KEY_TYPED -> handleTyped(event)
+            KeyEvent.KEY_RELEASED -> {
+                updateCharArgumentTracking(event)
+                false
+            }
             else -> false
         }
     }
@@ -100,8 +106,41 @@ class CmdlineOverlayKeyDispatcher(
             return false
         }
 
+        if (previousKeyAwaitsCharArgument) {
+            return false
+        }
+
         val overlayMode = event.detectOverlayMode() ?: return false
         return manager.handleTrigger(overlayMode)
+    }
+
+    private fun updateCharArgumentTracking(event: KeyEvent) {
+        if (event.isModifierKey()) {
+            return
+        }
+        previousKeyAwaitsCharArgument = event.isCharArgumentCommand()
+    }
+
+    private fun KeyEvent.isModifierKey(): Boolean {
+        return keyCode == KeyEvent.VK_SHIFT ||
+            keyCode == KeyEvent.VK_CONTROL ||
+            keyCode == KeyEvent.VK_ALT ||
+            keyCode == KeyEvent.VK_META
+    }
+
+    private fun KeyEvent.isCharArgumentCommand(): Boolean {
+        if (isControlDown || isAltDown || isMetaDown) {
+            return false
+        }
+        return when (keyChar) {
+            'f', 't', 'F', 'T', 'r', 'm', '\'', '`', '@', 'q', 'z', 'Z', 'g' -> true
+            else -> when (keyCode) {
+                KeyEvent.VK_F, KeyEvent.VK_T, KeyEvent.VK_R, KeyEvent.VK_M,
+                KeyEvent.VK_QUOTE, KeyEvent.VK_BACK_QUOTE,
+                KeyEvent.VK_AT, KeyEvent.VK_Q, KeyEvent.VK_Z, KeyEvent.VK_G -> !isShiftDown || keyChar in "FTZ"
+                else -> false
+            }
+        }
     }
 
     private fun updateExpressionTriggerState(event: KeyEvent) {
