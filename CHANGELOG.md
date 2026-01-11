@@ -2,6 +2,11 @@
 
 # IdeaVim-CmdFloat Changelog
 
+## 0.0.8
+
+- fix: Avoid triggering the overlay during multi-character searches (e.g. flash search)
+- feat: Allow configuring keys that suppress overlay during pending search input
+
 ## 0.0.7
 
 - feat: Support Vim registers like `c-r0` in the floating window

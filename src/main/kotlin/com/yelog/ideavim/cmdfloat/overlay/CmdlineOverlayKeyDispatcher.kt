@@ -163,7 +163,8 @@ class CmdlineOverlayKeyDispatcher(
         if (isControlDown || isAltDown || isMetaDown) {
             return false
         }
-        return keyChar == 's' || keyChar == 'S'
+        val candidate = resolvePrintableChar() ?: return false
+        return CmdlineOverlaySettings.extendedSearchKeys().contains(candidate)
     }
 
     private fun KeyEvent.isModifierKey(): Boolean {
@@ -177,15 +178,19 @@ class CmdlineOverlayKeyDispatcher(
         if (isControlDown || isAltDown || isMetaDown) {
             return false
         }
-        return when (keyChar) {
-            'f', 't', 'F', 'T', 'r', 'm', '\'', '`', '@', 'q', 'z', 'Z', 'g' -> true
-            else -> when (keyCode) {
-                KeyEvent.VK_F, KeyEvent.VK_T, KeyEvent.VK_R, KeyEvent.VK_M,
-                KeyEvent.VK_QUOTE, KeyEvent.VK_BACK_QUOTE,
-                KeyEvent.VK_AT, KeyEvent.VK_Q, KeyEvent.VK_Z, KeyEvent.VK_G -> !isShiftDown || keyChar in "FTZ"
-                else -> false
-            }
+        val candidate = resolvePrintableChar() ?: return false
+        return CmdlineOverlaySettings.singleCharArgumentKeys().contains(candidate)
+    }
+
+    private fun KeyEvent.resolvePrintableChar(): Char? {
+        if (keyChar != KeyEvent.CHAR_UNDEFINED && !keyChar.isISOControl()) {
+            return keyChar
         }
+        if (keyCode in KeyEvent.VK_A..KeyEvent.VK_Z) {
+            val base = ('a'.code + (keyCode - KeyEvent.VK_A)).toChar()
+            return if (isShiftDown) base.uppercaseChar() else base
+        }
+        return null
     }
 
     private fun updateExpressionTriggerState(event: KeyEvent) {

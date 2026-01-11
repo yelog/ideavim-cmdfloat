@@ -84,6 +84,17 @@ let g:cmdfloat_disable_default_trigger = 1
 
 Any truthy value turns every built-in trigger off; omit the variable or set it to `0`/`false` to keep the default bindings active.
 
+### Search Key Suppression
+
+CmdFloat suppresses the overlay when Vim is waiting for a search character. You can customize which keys are treated as single-character search commands and which ones start a multi-character search (for plugins like vim-flash, sneak, leap, etc.).
+
+```vim
+let g:cmdfloat_single_char_argument_keys = ['f', 't', 'F', 'T', 'r', 'm', '\'', '`', '@', 'q', 'z', 'Z', 'g']
+let g:cmdfloat_extended_search_keys = ['s', 'S']
+```
+
+If these lists are not set or are empty, the defaults above apply.
+
 ### Highlight Rendering
 
 Completion rows reuse the editor highlight palette to emphasize matches. This runs by default; set a global flag in `.ideavimrc` to disable the extra highlighting when you need a cheaper rendering path:
