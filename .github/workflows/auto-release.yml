@@ -1,0 +1,92 @@
+# Automatically creates a GitHub Release when the pluginVersion in gradle.properties
+# is not yet published as a release. The release includes:
+#   - The built plugin ZIP as a release asset
+#   - The corresponding changelog section from CHANGELOG.md as release notes
+
+name: Auto Release
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+
+  # ── Step 1: detect whether a release is needed ────────────────────────────
+  check:
+    name: Check version
+    runs-on: ubuntu-latest
+    outputs:
+      needed: ${{ steps.check.outputs.needed }}
+      version: ${{ steps.check.outputs.version }}
+    steps:
+
+      - name: Fetch Sources
+        uses: actions/checkout@v5
+
+      - name: Check if release needed
+        id: check
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=$(grep "^pluginVersion" gradle.properties | cut -d'=' -f2 | tr -d ' ')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          if gh release view "$VERSION" > /dev/null 2>&1; then
+            echo "Release $VERSION already exists — skipping."
+            echo "needed=false" >> $GITHUB_OUTPUT
+          else
+            echo "Release $VERSION not found — will build and release."
+            echo "needed=true" >> $GITHUB_OUTPUT
+          fi
+
+  # ── Step 2: build plugin and publish release ───────────────────────────────
+  release:
+    name: Build and Release
+    needs: check
+    if: needs.check.outputs.needed == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+
+      - name: Maximize Build Space
+        uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          tool-cache: false
+          large-packages: false
+
+      - name: Fetch Sources
+        uses: actions/checkout@v5
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: 21
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v5
+
+      - name: Build plugin
+        run: ./gradlew buildPlugin
+
+      - name: Extract changelog for version
+        run: |
+          VERSION="${{ needs.check.outputs.version }}"
+          mkdir -p build/tmp
+          awk -v ver="## $VERSION" '
+            $0 == ver { found=1; next }
+            found && /^## /  { exit }
+            found            { print }
+          ' CHANGELOG.md | sed '/^[[:space:]]*$/d' > build/tmp/release_notes.md
+          echo "--- release notes ---"
+          cat build/tmp/release_notes.md
+
+      - name: Create GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${{ needs.check.outputs.version }}"
+          gh release create "$VERSION" \
+            --title "$VERSION" \
+            --notes-file build/tmp/release_notes.md \
+            ./build/distributions/*.zip
