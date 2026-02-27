@@ -43,6 +43,10 @@ https://plugins.jetbrains.com/docs/intellij/plugin-configuration-file.html -->
     </actions>
 
     <change-notes><![CDATA[
+        <h2>0.0.9</h2>
+        <ul>
+        <li>fix: Overlay blocked after using <code>:actionlist</code> — KEY_RELEASED events from overlay panel and replay path no longer pollute extended-search-mode state (#18)</li>
+        </ul>
         <h2>0.0.8</h2>
         <ul>
         <li>fix: Avoid triggering the overlay during multi-character searches (e.g. flash search)</li>

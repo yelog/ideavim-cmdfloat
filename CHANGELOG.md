@@ -2,6 +2,10 @@
 
 # IdeaVim-CmdFloat Changelog
 
+## 0.0.9
+
+- fix: Overlay blocked after using `:actionlist` — KEY_RELEASED events from overlay panel and replay path no longer pollute extended-search-mode state (#18)
+
 ## 0.0.8
 
 - fix: Avoid triggering the overlay during multi-character searches (e.g. flash search)
