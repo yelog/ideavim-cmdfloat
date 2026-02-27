@@ -43,6 +43,10 @@ https://plugins.jetbrains.com/docs/intellij/plugin-configuration-file.html -->
     </actions>
 
     <change-notes><![CDATA[
+        <h2>0.0.10</h2>
+        <ul>
+        <li>ci: Release is now triggered by pushing a version tag (e.g. <code>v0.0.10</code>) instead of a branch push</li>
+        </ul>
         <h2>0.0.9</h2>
         <ul>
         <li>fix: Overlay blocked after using <code>:actionlist</code> — KEY_RELEASED events from overlay panel and replay path no longer pollute extended-search-mode state (#18)</li>

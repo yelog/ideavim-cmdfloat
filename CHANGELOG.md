@@ -2,6 +2,10 @@
 
 # IdeaVim-CmdFloat Changelog
 
+## 0.0.10
+
+- ci: Release is now triggered by pushing a version tag (e.g. `v0.0.10`) instead of a branch push
+
 ## 0.0.9
 
 - fix: Overlay blocked after using `:actionlist` — KEY_RELEASED events from overlay panel and replay path no longer pollute extended-search-mode state (#18)
