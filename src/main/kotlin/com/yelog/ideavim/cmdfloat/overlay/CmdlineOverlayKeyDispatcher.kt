@@ -19,7 +19,12 @@ class CmdlineOverlayKeyDispatcher(
             KeyEvent.KEY_PRESSED -> handlePressed(event)
             KeyEvent.KEY_TYPED -> handleTyped(event)
             KeyEvent.KEY_RELEASED -> {
-                updateCharArgumentTracking(event)
+                val source = event.component
+                val shouldTrack = !IdeaVimFacade.isOverlaySuppressed() &&
+                    (source == null || !manager.isOverlayComponent(source))
+                if (shouldTrack) {
+                    updateCharArgumentTracking(event)
+                }
                 false
             }
             else -> false
