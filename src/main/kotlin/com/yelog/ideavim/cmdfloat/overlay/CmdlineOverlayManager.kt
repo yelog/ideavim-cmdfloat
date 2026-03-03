@@ -25,6 +25,7 @@ import com.intellij.openapi.wm.WindowManager
 import com.intellij.ui.JBColor
 import com.intellij.ui.awt.RelativePoint
 import com.intellij.util.ui.JBUI
+import com.yelog.ideavim.cmdfloat.cache.DocumentWordCache
 import java.awt.Color
 import java.awt.Component
 import java.awt.Font
@@ -42,6 +43,9 @@ class CmdlineOverlayManager(private val project: Project) {
     private val searchHistory = CommandHistory()
     private val expressionHistory = CommandHistory()
     private var expressionReplayNeedsCtrlR = true
+
+    // Document word cache for faster search completions
+    private val wordCache = com.yelog.ideavim.cmdfloat.cache.DocumentWordCache(project)
 
     private var popup: JBPopup? = null
     private var overlayComponent: CmdlineOverlayPanel? = null
@@ -272,8 +276,16 @@ class CmdlineOverlayManager(private val project: Project) {
         if (lineLimit > 0 && document.lineCount > lineLimit) {
             return emptyList()
         }
-        val application = ApplicationManager.getApplication()
+
         val highlightEnabled = CmdlineOverlaySettings.highlightCompletionsEnabled()
+
+        // Use cache when no range limit and highlight is disabled for better performance
+        if (limitRange == null && !highlightEnabled) {
+            return wordCache.getWords(editor)
+        }
+
+        // Fall back to synchronous collection for range-limited or highlighted queries
+        val application = ApplicationManager.getApplication()
         val extractor = {
             val textRange = limitRange?.intersection(TextRange(0, document.textLength))
                 ?.takeIf { !it.isEmpty } ?: TextRange(0, document.textLength)
@@ -282,7 +294,7 @@ class CmdlineOverlayManager(private val project: Project) {
             } else {
                 val text = document.charsSequence.subSequence(textRange.startOffset, textRange.endOffset)
                 val baseOffset = textRange.startOffset
-                val unique = LinkedHashMap<String, SearchCompletionWord>()
+                val unique = LinkedHashMap<String, SearchCompletionWord>(MAX_SEARCH_WORDS * 2)
                 val defaultForeground =
                     editor.colorsScheme.defaultForeground
                         ?: EditorColorsManager.getInstance().globalScheme.defaultForeground
