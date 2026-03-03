@@ -22,12 +22,17 @@ import java.awt.event.HierarchyEvent
 import java.awt.event.HierarchyListener
 import java.awt.event.KeyAdapter
 import java.awt.event.KeyEvent
+import com.yelog.ideavim.cmdfloat.util.Debouncer
 import java.util.*
 import javax.swing.*
 import javax.swing.UIManager
 import javax.swing.event.DocumentEvent
 import javax.swing.event.DocumentListener
 import kotlin.math.min
+
+// Maximum completions to show for performance
+private const val MAX_COMPLETIONS = 50
+private const val COMPLETION_DEBOUNCE_MS = 30L
 
 class CmdlineOverlayPanel(
     private val mode: OverlayMode,
@@ -848,6 +853,10 @@ class CmdlineOverlayPanel(
         private val completions: List<SearchCompletionWord>,
     ) : CompletionSupport {
         private val model = CollectionListModel<SearchMatchCompletion>()
+        // Debouncer for completion updates to avoid excessive UI refreshes during rapid typing
+        private val completionDebouncer = Debouncer(delayMs = COMPLETION_DEBOUNCE_MS)
+        // Indexed completion system for fast fuzzy matching
+        private val completionIndex = com.yelog.ideavim.cmdfloat.cache.CompletionIndex()
         private val list = JBList(model).apply {
             selectionMode = ListSelectionModel.SINGLE_SELECTION
             fixedCellHeight = JBUI.scale(20)
@@ -899,6 +908,11 @@ class CmdlineOverlayPanel(
         private var parentComponent: JComponent? = null
         private var currentHeight: Int = JBUI.scale(80)
 
+        // Build completion index for fast fuzzy matching
+        init {
+            completionIndex.addAll(completions)
+        }
+
         init {
             textField.addHierarchyListener(object : HierarchyListener {
                 override fun hierarchyChanged(event: HierarchyEvent) {
@@ -941,12 +955,64 @@ class CmdlineOverlayPanel(
                 dispose()
                 return
             }
-            val matches = matchSearchCompletions(completions, query, maxCompletions)
-            if (matches.isEmpty()) {
-                dispose()
-            } else {
-                updateCompletions(matches)
+            // Debounce completion updates to avoid excessive UI refreshes during rapid typing
+            completionDebouncer.debounce {
+                // Use indexed search for better performance with large completion sets
+                val indexedMatches = completionIndex.search(query)
+                val matches = if (indexedMatches.isNotEmpty()) {
+                    indexedMatches.map { toSearchMatchCompletion(it, query) }
+                } else {
+                    // Fallback to fuzzy matcher for complex patterns
+                    matchSearchCompletions(completions, query, maxCompletions)
+                }
+                if (matches.isEmpty()) {
+                    dispose()
+                } else {
+                    updateCompletions(matches)
+                }
             }
+        }
+
+        private fun toSearchMatchCompletion(word: SearchCompletionWord, query: String): SearchMatchCompletion {
+            val wordText = word.word
+            val normalizedQuery = query.lowercase(Locale.ROOT)
+            val wordLower = wordText.lowercase(Locale.ROOT)
+
+            // Find match positions
+            val positions = mutableListOf<Int>()
+            var queryIndex = 0
+            for (i in wordLower.indices) {
+                if (queryIndex >= normalizedQuery.length) break
+                if (wordLower[i] == normalizedQuery[queryIndex]) {
+                    positions.add(i)
+                    queryIndex++
+                }
+            }
+
+            return SearchMatchCompletion(
+                word = wordText,
+                attributes = SimpleTextAttributes.fromTextAttributes(word.attributes),
+                positions = positions.toIntArray(),
+                maxConsecutive = calculateMaxConsecutive(positions),
+                firstIndex = positions.firstOrNull() ?: 0,
+                sumIndices = positions.sum(),
+                span = if (positions.isEmpty()) 0 else positions.last() - positions.first()
+            )
+        }
+
+        private fun calculateMaxConsecutive(positions: List<Int>): Int {
+            if (positions.isEmpty()) return 0
+            var maxStreak = 1
+            var currentStreak = 1
+            for (i in 1 until positions.size) {
+                if (positions[i] == positions[i - 1] + 1) {
+                    currentStreak++
+                    maxStreak = maxOf(maxStreak, currentStreak)
+                } else {
+                    currentStreak = 1
+                }
+            }
+            return maxStreak
         }
 
         private fun updateCompletions(matches: List<SearchMatchCompletion>) {
@@ -1097,6 +1163,8 @@ class CmdlineOverlayPanel(
         private val searchCompletions: List<SearchCompletionWord>,
     ) : CompletionSupport {
         private val model = CollectionListModel<CompletionEntry>()
+        // Debouncer for completion updates to avoid excessive UI refreshes during rapid typing
+        private val completionDebouncer = Debouncer(delayMs = COMPLETION_DEBOUNCE_MS)
         private val list = JBList(model).apply {
             selectionMode = ListSelectionModel.SINGLE_SELECTION
             fixedCellHeight = JBUI.scale(20)
@@ -1257,6 +1325,13 @@ class CmdlineOverlayPanel(
             currentActionQuery = null
             currentOptionQuery = null
             currentExQuery = ""
+            // Debounce completion updates to avoid excessive UI refreshes during rapid typing
+            completionDebouncer.debounce {
+                updateCompletionsInternal(content)
+            }
+        }
+
+        private fun updateCompletionsInternal(content: String) {
             val substitutionQuery = parseSubstitutionSearchQuery(content)
             if (substitutionQuery != null && searchCompletions.isNotEmpty()) {
                 val matches = matchSearchCompletions(searchCompletions, substitutionQuery.query, maxSearchCompletions)

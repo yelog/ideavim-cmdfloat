@@ -7,22 +7,34 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.editor.ScrollType
+import com.yelog.ideavim.cmdfloat.util.Debouncer
 import java.awt.Rectangle
 import java.awt.event.InputEvent
 import java.awt.event.KeyEvent
+import java.lang.invoke.MethodHandle
+import java.lang.invoke.MethodHandles
+import java.lang.invoke.MethodType
 import java.lang.reflect.Array as ReflectArray
 import java.lang.reflect.Method
 import java.lang.reflect.Modifier
 import java.util.Locale
+import java.util.Optional
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
-import java.util.Optional
 import javax.swing.KeyStroke
 
 object IdeaVimFacade {
 
     private val logger = Logger.getInstance(IdeaVimFacade::class.java)
+
+    // Debouncer for search preview to avoid excessive updates during rapid typing (50ms delay)
+    private val searchPreviewDebouncer = Debouncer(delayMs = 50)
+
+    // MethodHandle cache for frequently invoked reflection methods (10x faster than reflection)
+    private val methodHandleCache = ConcurrentHashMap<String, MethodHandle?>()
+    private val lookup = MethodHandles.publicLookup()
 
     private val vimPluginClass: Class<*>? = loadClass("com.maddyhome.idea.vim.VimPlugin")
     private val commandStateClass: Class<*>? = loadClass(
@@ -621,6 +633,13 @@ object IdeaVimFacade {
         if (!isAvailable()) {
             return
         }
+        // Debounce search preview to avoid excessive updates during rapid typing
+        searchPreviewDebouncer.debounce {
+            doPreviewSearch(editor, mode, query, initialOffset)
+        }
+    }
+
+    private fun doPreviewSearch(editor: Editor, mode: OverlayMode, query: String, initialOffset: Int) {
         val caretOffset = if (initialOffset >= 0) initialOffset else editor.caretModel.primaryCaret.offset
         storeSearchState(editor)
         if (query.isEmpty()) {
@@ -1476,4 +1495,106 @@ object IdeaVimFacade {
         val direction: Any?,
         val visibleArea: Rectangle?,
     )
+
+    /**
+     * MethodHandle utilities for high-performance reflection.
+     * MethodHandle is 10-100x faster than standard reflection for repeated invocations.
+     */
+
+    /**
+     * Gets or creates a MethodHandle for the specified method.
+     * MethodHandles are cached for reuse to avoid repeated lookups.
+     */
+    private fun getMethodHandle(
+        clazz: Class<*>?,
+        methodName: String,
+        vararg paramTypes: Class<*>,
+    ): MethodHandle? {
+        if (clazz == null) return null
+
+        val cacheKey = "${clazz.name}#$methodName#${paramTypes.joinToString(",") { it.name }}"
+
+        // Check cache first
+        methodHandleCache[cacheKey]?.let { return it }
+        methodHandleCache.containsKey(cacheKey).let { if (it) return null } // Already tried and failed
+
+        // Try to create the handle
+        val handle = try {
+            val method = clazz.getDeclaredMethod(methodName, *paramTypes)
+            if (!method.canAccess(null)) {
+                method.isAccessible = true
+            }
+            lookup.unreflect(method)
+        } catch (e: NoSuchMethodException) {
+            logger.debug("Method $methodName not found in ${clazz.name}")
+            null
+        } catch (e: IllegalAccessException) {
+            logger.debug("Cannot access method $methodName in ${clazz.name}")
+            null
+        }
+
+        // Cache the result (even if null)
+        methodHandleCache[cacheKey] = handle
+        return handle
+    }
+
+    /**
+     * Gets or creates a MethodHandle for a static method.
+     */
+    private fun getStaticMethodHandle(
+        clazz: Class<*>?,
+        methodName: String,
+        returnType: Class<*>?,
+        vararg paramTypes: Class<*>,
+    ): MethodHandle? {
+        if (clazz == null) return null
+
+        val cacheKey = "static:${clazz.name}#$methodName#${paramTypes.joinToString(",") { it.name }}"
+
+        // Check cache first
+        methodHandleCache[cacheKey]?.let { return it }
+        methodHandleCache.containsKey(cacheKey).let { if (it) return null } // Already tried and failed
+
+        // Try to create the handle
+        val handle = try {
+            val methodType = if (returnType != null) {
+                MethodType.methodType(returnType, paramTypes)
+            } else {
+                MethodType.methodType(Void.TYPE, paramTypes)
+            }
+            lookup.findStatic(clazz, methodName, methodType)
+        } catch (e: NoSuchMethodException) {
+            logger.debug("Static method $methodName not found in ${clazz.name}")
+            null
+        } catch (e: IllegalAccessException) {
+            logger.debug("Cannot access static method $methodName in ${clazz.name}")
+            null
+        }
+
+        // Cache the result (even if null)
+        methodHandleCache[cacheKey] = handle
+        return handle
+    }
+
+    /**
+     * Invokes a cached MethodHandle with the given arguments.
+     * Returns null if the handle is not found or invocation fails.
+     */
+    private fun invokeMethodHandle(handle: MethodHandle?, vararg args: Any?): Any? {
+        if (handle == null) return null
+        return try {
+            handle.invokeWithArguments(*args)
+        } catch (e: Throwable) {
+            logger.debug("MethodHandle invocation failed: ${e.message}")
+            null
+        }
+    }
+
+    /**
+     * Clears the MethodHandle cache.
+     * Call this if classes are reloaded or to free memory.
+     */
+    fun clearMethodHandleCache() {
+        methodHandleCache.clear()
+    }
 }
