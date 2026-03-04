@@ -858,7 +858,15 @@ object IdeaVimFacade {
             return
         }
 
-        val keys = mode.prefix.asSequence() + payload.asSequence() + sequenceOf('\n')
+        // Strip leading mode prefix from payload if present (e.g., ":" for command mode)
+        // The overlay text field includes the prefix, but mode.prefix will add it again
+        val cleanPayload = if (payload.startsWith(mode.prefix)) {
+            payload.substring(mode.prefix.length)
+        } else {
+            payload
+        }
+
+        val keys = mode.prefix.asSequence() + cleanPayload.asSequence() + sequenceOf('\n')
         dispatchKeys(editor, keys, "Failed to replay IdeaVim command sequence.")
     }
 
