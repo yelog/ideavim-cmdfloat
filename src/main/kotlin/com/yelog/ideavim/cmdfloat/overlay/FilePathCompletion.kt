@@ -6,6 +6,8 @@ import com.intellij.openapi.fileTypes.FileTypeManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.roots.ProjectFileIndex
 import com.intellij.openapi.vfs.VirtualFile
+import com.intellij.util.IconUtil
+import javax.swing.Icon
 
 /**
  * Provides file path completions for commands like :e, :w, :source, :r, etc.
@@ -22,6 +24,7 @@ class FilePathCompletion(private val project: Project) {
         val fileType: String?,
         val isDirectory: Boolean,
         val matchText: String,
+        val icon: Icon,
     )
 
     private val fileTypeManager: FileTypeManager by lazy { FileTypeManager.getInstance() }
@@ -154,6 +157,7 @@ class FilePathCompletion(private val project: Project) {
                 } else {
                     file.name
                 }
+                val icon = getFileIcon(file)
                 Completion(
                     name = file.name,
                     path = relativeBase + file.name,
@@ -161,8 +165,16 @@ class FilePathCompletion(private val project: Project) {
                     fileType = file.extension?.lowercase(),
                     isDirectory = file.isDirectory,
                     matchText = file.name,
+                    icon = icon,
                 )
             }
+    }
+
+    /**
+     * Get the icon for a file, matching the icon shown in the project view.
+     */
+    private fun getFileIcon(file: VirtualFile): Icon {
+        return IconUtil.getIcon(file, 0, project)
     }
 
     /**

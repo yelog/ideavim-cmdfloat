@@ -1388,11 +1388,7 @@ class CmdlineOverlayPanel(
                         }
 
                         is CompletionEntry.FilePath -> {
-                            val fileIcon = when {
-                                value.data.isDirectory -> AllIcons.Nodes.Folder
-                                else -> AllIcons.FileTypes.Text
-                            }
-                            icon = fileIcon
+                            icon = value.data.icon
                             val highlightQuery = currentFilePathQuery?.query?.substringAfterLast('/') ?: currentFilePathQuery?.query ?: ""
                             appendWithHighlights(
                                 text = value.data.name,
