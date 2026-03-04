@@ -8,6 +8,7 @@ import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.editor.ScrollType
 import com.yelog.ideavim.cmdfloat.util.Debouncer
+import java.awt.KeyboardFocusManager
 import java.awt.Rectangle
 import java.awt.event.InputEvent
 import java.awt.event.KeyEvent
@@ -1073,7 +1074,10 @@ object IdeaVimFacade {
     }
 
     private fun dispatchThroughIdeQueue(editor: Editor, character: Char) {
-        val component = editor.contentComponent
+        // 使用当前焦点组件而不是固定的编辑器组件
+        // 这样当 IdeaVim 处于命令行模式时，按键会发送到命令行输入组件
+        val focusOwner = KeyboardFocusManager.getCurrentKeyboardFocusManager().focusOwner
+        val component = focusOwner ?: editor.contentComponent
         val queue = IdeEventQueue.getInstance()
         val timestamp = System.currentTimeMillis()
         val keyCode = when {
