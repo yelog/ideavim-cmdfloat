@@ -68,6 +68,11 @@ class CmdlineOverlayPanel(
     private val searchResultLabel: JBLabel?
     private var awaitingRegisterPaste = false
     private var skipRegisterTriggerTyped = false
+    // History search mode state
+    private var historySearchMode = false
+    private var filteredHistory: List<String> = emptyList()
+    private var historySearchIndex = -1
+    private var originalInputBeforeHistorySearch = ""
 
     init {
         val scheme = EditorColorsManager.getInstance().globalScheme
@@ -188,6 +193,11 @@ class CmdlineOverlayPanel(
 
     private fun handleDocumentChange(textField: JBTextField) {
         if (programmaticUpdate) {
+            return
+        }
+        // In history search mode, filter history instead of normal completion
+        if (historySearchMode) {
+            filterHistory(textField.text)
             return
         }
         historyIndex = -1
@@ -366,6 +376,11 @@ class CmdlineOverlayPanel(
 
     private fun installActions(textField: JBTextField) {
         textField.addActionListener {
+            // In history search mode, accept the selected history entry
+            if (historySearchMode) {
+                acceptHistorySelection(textField)
+                return@addActionListener
+            }
             completionSupport?.acceptSelection()
             onSubmit?.invoke(textField.text)
             markSearchCommitted()
@@ -378,6 +393,12 @@ class CmdlineOverlayPanel(
         inputMap.put(KeyStroke.getKeyStroke("ESCAPE"), ACTION_CANCEL)
         actionMap.put(ACTION_CANCEL, object : AbstractAction() {
             override fun actionPerformed(e: ActionEvent) {
+                // In history search mode, exit to normal mode first
+                if (historySearchMode) {
+                    exitHistorySearchMode()
+                    setTextProgrammatically(textField, originalInputBeforeHistorySearch)
+                    return
+                }
                 completionSupport?.dispose()
                 cancelSearchPreview()
                 cancelCommandPreview()
@@ -387,6 +408,10 @@ class CmdlineOverlayPanel(
 
         actionMap.put(ACTION_HISTORY_PREVIOUS, object : AbstractAction() {
             override fun actionPerformed(e: ActionEvent?) {
+                if (historySearchMode) {
+                    navigateFilteredHistory(previous = true, textField)
+                    return
+                }
                 if (completionSupport?.moveSelection(previous = true) != true) {
                     navigateHistory(previous = true, textField)
                 }
@@ -395,6 +420,10 @@ class CmdlineOverlayPanel(
 
         actionMap.put(ACTION_HISTORY_NEXT, object : AbstractAction() {
             override fun actionPerformed(e: ActionEvent?) {
+                if (historySearchMode) {
+                    navigateFilteredHistory(previous = false, textField)
+                    return
+                }
                 if (completionSupport?.moveSelection(previous = false) != true) {
                     navigateHistory(previous = false, textField)
                 }
@@ -424,6 +453,16 @@ class CmdlineOverlayPanel(
         actionMap.put(ACTION_COMPLETION_PREVIOUS, completionPreviousAction)
         inputMap.put(KeyStroke.getKeyStroke("TAB"), ACTION_COMPLETION_NEXT)
         actionMap.put(ACTION_COMPLETION_NEXT, completionNextAction)
+
+        // History search mode: Ctrl+R to search in history
+        inputMap.put(KeyStroke.getKeyStroke("ctrl R"), ACTION_HISTORY_SEARCH)
+        actionMap.put(ACTION_HISTORY_SEARCH, object : AbstractAction() {
+            override fun actionPerformed(e: ActionEvent?) {
+                if (!historySearchMode) {
+                    enterHistorySearchMode(textField)
+                }
+            }
+        })
 
         installRegisterPasteHandler(textField)
     }
@@ -465,6 +504,88 @@ class CmdlineOverlayPanel(
         if (mode == OverlayMode.COMMAND) {
             cancelCommandPreview()
         }
+    }
+
+    // History search mode methods
+    private fun enterHistorySearchMode(textField: JBTextField) {
+        if (historySnapshot.isEmpty()) {
+            return
+        }
+        historySearchMode = true
+        originalInputBeforeHistorySearch = textField.text
+        filteredHistory = historySnapshot.toList()
+        historySearchIndex = -1
+        // Show all history initially
+        showHistorySearchUI()
+    }
+
+    private fun exitHistorySearchMode() {
+        historySearchMode = false
+        filteredHistory = emptyList()
+        historySearchIndex = -1
+        hideHistorySearchUI()
+    }
+
+    private fun filterHistory(query: String) {
+        if (!historySearchMode) return
+        filteredHistory = if (query.isBlank()) {
+            historySnapshot.toList()
+        } else {
+            val queryLower = query.lowercase()
+            historySnapshot.filter { it.lowercase().contains(queryLower) }
+        }
+        historySearchIndex = if (filteredHistory.isNotEmpty()) 0 else -1
+        updateHistorySearchUI()
+    }
+
+    private fun navigateFilteredHistory(previous: Boolean, textField: JBTextField) {
+        if (!historySearchMode || filteredHistory.isEmpty()) {
+            return
+        }
+        if (previous) {
+            historySearchIndex = if (historySearchIndex <= 0) {
+                filteredHistory.size - 1
+            } else {
+                historySearchIndex - 1
+            }
+        } else {
+            historySearchIndex = if (historySearchIndex >= filteredHistory.size - 1) {
+                0
+            } else {
+                historySearchIndex + 1
+            }
+        }
+        if (historySearchIndex in filteredHistory.indices) {
+            setTextProgrammatically(textField, filteredHistory[historySearchIndex])
+            updateHistorySearchUI()
+        }
+    }
+
+    private fun acceptHistorySelection(textField: JBTextField) {
+        if (historySearchMode && historySearchIndex in filteredHistory.indices) {
+            val selectedValue = filteredHistory[historySearchIndex]
+            exitHistorySearchMode()
+            setTextProgrammatically(textField, selectedValue)
+        }
+    }
+
+    private fun showHistorySearchUI() {
+        // Update prefix label to indicate history search mode
+        updatePrefixLabelForHistorySearch(true)
+    }
+
+    private fun hideHistorySearchUI() {
+        updatePrefixLabelForHistorySearch(false)
+    }
+
+    private fun updateHistorySearchUI() {
+        // Could update a status indicator showing "3/20" or similar
+        // For now, the visual feedback is through the filtered list behavior
+    }
+
+    private fun updatePrefixLabelForHistorySearch(inHistorySearch: Boolean) {
+        // This would update the prefix label to show we're in history search mode
+        // Implementation depends on how we want to visually indicate this
     }
 
     private fun updateSearchResultIndicator(query: String) {
@@ -1165,6 +1286,8 @@ class CmdlineOverlayPanel(
         private val model = CollectionListModel<CompletionEntry>()
         // Debouncer for completion updates to avoid excessive UI refreshes during rapid typing
         private val completionDebouncer = Debouncer(delayMs = COMPLETION_DEBOUNCE_MS)
+        // File path completion provider
+        private val filePathCompletion by lazy { FilePathCompletion(editor.project ?: return@lazy null) }
         private val list = JBList(model).apply {
             selectionMode = ListSelectionModel.SINGLE_SELECTION
             fixedCellHeight = JBUI.scale(20)
@@ -1263,6 +1386,26 @@ class CmdlineOverlayPanel(
                                 )
                             }
                         }
+
+                        is CompletionEntry.FilePath -> {
+                            val fileIcon = when {
+                                value.data.isDirectory -> AllIcons.Nodes.Folder
+                                else -> AllIcons.FileTypes.Text
+                            }
+                            icon = fileIcon
+                            val highlightQuery = currentFilePathQuery?.query ?: ""
+                            appendWithHighlights(
+                                text = value.data.name,
+                                highlightIndices = highlightIndicesForSubstring(value.data.name, highlightQuery),
+                                normalAttrs = SimpleTextAttributes.REGULAR_ATTRIBUTES,
+                                highlightAttrs = highlightAttrs,
+                            )
+                            append("  ", SimpleTextAttributes.GRAYED_SMALL_ATTRIBUTES)
+                            append(
+                                value.data.path,
+                                SimpleTextAttributes.GRAY_SMALL_ATTRIBUTES,
+                            )
+                        }
                     }
                 }
             }
@@ -1272,6 +1415,7 @@ class CmdlineOverlayPanel(
         private var currentActionQuery: ActionQuery? = null
         private var currentOptionQuery: OptionQuery? = null
         private var currentExQuery: String = ""
+        private var currentFilePathQuery: FilePathQuery? = null
 
         private val scrollPane = JBScrollPane(list).apply {
             isOpaque = false
@@ -1325,6 +1469,7 @@ class CmdlineOverlayPanel(
             currentActionQuery = null
             currentOptionQuery = null
             currentExQuery = ""
+            currentFilePathQuery = null
             // Debounce completion updates to avoid excessive UI refreshes during rapid typing
             completionDebouncer.debounce {
                 updateCompletionsInternal(content)
@@ -1366,6 +1511,20 @@ class CmdlineOverlayPanel(
                 }
                 return
             }
+
+            // File path completion for commands like :e, :w, :source, etc.
+            val filePathQuery = FilePathQueryParser.parse(content)
+            if (filePathQuery != null && filePathCompletion != null) {
+                val completions = filePathCompletion.suggest(filePathQuery.query, maxVisibleRows)
+                if (completions.isEmpty()) {
+                    dispose()
+                } else {
+                    currentFilePathQuery = filePathQuery
+                    updateCompletions(completions.map { CompletionEntry.FilePath(it, filePathQuery.prefix) })
+                }
+                return
+            }
+
             val completions = ExCommandCompletion.suggest(content, maxVisibleRows)
             if (completions.isEmpty()) {
                 dispose()
@@ -1584,6 +1743,10 @@ class CmdlineOverlayPanel(
                 is CompletionEntry.Option -> {
                     setTextProgrammatically(textField, completion.prefix + completion.data.name)
                 }
+
+                is CompletionEntry.FilePath -> {
+                    setTextProgrammatically(textField, completion.prefix + completion.data.path)
+                }
             }
         }
 
@@ -1693,6 +1856,7 @@ class CmdlineOverlayPanel(
         private const val ACTION_HISTORY_NEXT = "ideavim.cmdline.history.next"
         private const val ACTION_COMPLETION_PREVIOUS = "ideavim.cmdline.completion.previous"
         private const val ACTION_COMPLETION_NEXT = "ideavim.cmdline.completion.next"
+        private const val ACTION_HISTORY_SEARCH = "ideavim.cmdline.history.search"
     }
 
     private fun setTextProgrammatically(textField: JBTextField, value: String) {
@@ -1887,4 +2051,5 @@ private sealed interface CompletionEntry {
     data class ExCommand(val data: ExCommandCompletion.Completion) : CompletionEntry
     data class Action(val data: ActionCommandCompletion.Completion, val prefix: String) : CompletionEntry
     data class Option(val data: OptionCommandCompletion.Completion, val prefix: String) : CompletionEntry
+    data class FilePath(val data: FilePathCompletion.Completion, val prefix: String) : CompletionEntry
 }
