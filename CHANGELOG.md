@@ -2,6 +2,11 @@
 
 # IdeaVim-CmdFloat Changelog
 
+## 0.1.0
+
+- perf: Add comprehensive performance optimizations
+- perf: Add TTL-based cache for IdeaVim global variable reads
+
 ## 0.0.10
 
 - ci: Release is now triggered by pushing a version tag (e.g. `v0.0.10`) instead of a branch push

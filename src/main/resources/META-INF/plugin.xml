@@ -43,6 +43,11 @@ https://plugins.jetbrains.com/docs/intellij/plugin-configuration-file.html -->
     </actions>
 
     <change-notes><![CDATA[
+        <h2>0.1.0</h2>
+        <ul>
+        <li>perf: Add comprehensive performance optimizations</li>
+        <li>perf: Add TTL-based cache for IdeaVim global variable reads</li>
+        </ul>
         <h2>0.0.10</h2>
         <ul>
         <li>ci: Release is now triggered by pushing a version tag (e.g. <code>v0.0.10</code>) instead of a branch push</li>
