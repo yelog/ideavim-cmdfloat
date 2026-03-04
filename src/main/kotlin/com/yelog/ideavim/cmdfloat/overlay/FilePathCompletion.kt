@@ -145,9 +145,11 @@ class FilePathCompletion(private val project: Project) {
                     .thenBy { it.second.name.lowercase() }
             )
 
-        // Build path prefix for display
+        // Build path prefix for display and execution (e.g., "../", "src/")
         val pathPrefix = buildPathPrefix(query)
-        val relativeBase = buildRelativeBase(baseDir, targetDir)
+        // Use pathPrefix directly as the executable path since it correctly represents
+        // the user's navigation intent (handles ../, subdirectories, etc.)
+        val executablePathPrefix = pathPrefix
 
         return matches
             .take(limit)
@@ -160,7 +162,7 @@ class FilePathCompletion(private val project: Project) {
                 val icon = getFileIcon(file)
                 Completion(
                     name = file.name,
-                    path = relativeBase + file.name,
+                    path = executablePathPrefix + file.name,
                     displayPath = displayPath,
                     fileType = file.extension?.lowercase(),
                     isDirectory = file.isDirectory,
