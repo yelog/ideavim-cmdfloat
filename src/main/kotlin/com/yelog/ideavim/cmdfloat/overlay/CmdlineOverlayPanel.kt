@@ -1393,18 +1393,21 @@ class CmdlineOverlayPanel(
                                 else -> AllIcons.FileTypes.Text
                             }
                             icon = fileIcon
-                            val highlightQuery = currentFilePathQuery?.query ?: ""
+                            val highlightQuery = currentFilePathQuery?.query?.substringAfterLast('/') ?: currentFilePathQuery?.query ?: ""
                             appendWithHighlights(
                                 text = value.data.name,
                                 highlightIndices = highlightIndicesForSubstring(value.data.name, highlightQuery),
                                 normalAttrs = SimpleTextAttributes.REGULAR_ATTRIBUTES,
                                 highlightAttrs = highlightAttrs,
                             )
-                            append("  ", SimpleTextAttributes.GRAYED_SMALL_ATTRIBUTES)
-                            append(
-                                value.data.path,
-                                SimpleTextAttributes.GRAY_SMALL_ATTRIBUTES,
-                            )
+                            // Show path hint if navigating from different directory
+                            if (value.data.displayPath != value.data.name) {
+                                append("  ", SimpleTextAttributes.GRAYED_SMALL_ATTRIBUTES)
+                                append(
+                                    value.data.displayPath,
+                                    SimpleTextAttributes.GRAY_SMALL_ATTRIBUTES,
+                                )
+                            }
                         }
                     }
                 }
@@ -1514,8 +1517,9 @@ class CmdlineOverlayPanel(
 
             // File path completion for commands like :e, :w, :source, etc.
             val filePathQuery = FilePathQueryParser.parse(content)
-            if (filePathQuery != null && filePathCompletion != null) {
-                val completions = filePathCompletion.suggest(filePathQuery.query, maxVisibleRows)
+            val filePathCompletionInstance = filePathCompletion
+            if (filePathQuery != null && filePathCompletionInstance != null) {
+                val completions = filePathCompletionInstance.suggest(filePathQuery.query, editor, maxVisibleRows)
                 if (completions.isEmpty()) {
                     dispose()
                 } else {
@@ -1745,7 +1749,7 @@ class CmdlineOverlayPanel(
                 }
 
                 is CompletionEntry.FilePath -> {
-                    setTextProgrammatically(textField, completion.prefix + completion.data.path)
+                    setTextProgrammatically(textField, completion.prefix + completion.data.displayPath)
                 }
             }
         }

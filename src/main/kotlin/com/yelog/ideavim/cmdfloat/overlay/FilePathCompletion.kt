@@ -1,15 +1,15 @@
 package com.yelog.ideavim.cmdfloat.overlay
 
 import com.intellij.openapi.diagnostic.Logger
+import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.fileTypes.FileTypeManager
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.roots.ProjectFileIndex
 import com.intellij.openapi.vfs.VirtualFile
-import com.intellij.psi.search.FilenameIndex
-import com.intellij.psi.search.GlobalSearchScope
 
 /**
  * Provides file path completions for commands like :e, :w, :source, :r, etc.
- * Uses IntelliJ's FilenameIndex for efficient file searching.
+ * Supports relative path navigation with .. for parent directories.
  */
 class FilePathCompletion(private val project: Project) {
 
@@ -18,206 +18,225 @@ class FilePathCompletion(private val project: Project) {
     data class Completion(
         val name: String,
         val path: String,
+        val displayPath: String,
         val fileType: String?,
         val isDirectory: Boolean,
         val matchText: String,
     )
 
-    private data class FileEntry(
-        val name: String,
-        val path: String,
-        val fileType: String?,
-        val isDirectory: Boolean,
-        val sortKey: String,
-    )
+    private val fileTypeManager: FileTypeManager by lazy { FileTypeManager.getInstance() }
 
-    private var allFiles: List<FileEntry> = emptyList()
-    private var initialized = false
-
-    init {
-        // Initialize file index in background
-        com.intellij.openapi.application.ApplicationManager.getApplication()
-            .executeOnPooledThread {
-                initializeFileIndex()
-            }
+    /**
+     * Suggest file completions based on current directory context.
+     * @param query The search query (may contain path prefix like "../subdir/file")
+     * @param editor The current editor to determine the base directory
+     * @param limit Maximum number of results to return
+     * @return List of matching file completions
+     */
+    fun suggest(query: String, editor: Editor?, limit: Int): List<Completion> {
+        val baseDir = getBaseDirectory(editor)
+        return suggestFromDirectory(query, baseDir, limit)
     }
 
-    private fun initializeFileIndex() {
-        if (initialized) return
-        try {
-            val application = com.intellij.openapi.application.ApplicationManager.getApplication()
-            val fileTypeManager = FileTypeManager.getInstance()
-
-            val files = if (application.isReadAccessAllowed) {
-                doInitializeFileIndex(fileTypeManager)
-            } else {
-                com.intellij.openapi.application.ReadAction.nonBlocking<List<FileEntry>> {
-                    doInitializeFileIndex(fileTypeManager)
-                }.executeSynchronously()
-            }
-
-            allFiles = files
-            initialized = true
-            logger.debug("FilePathCompletion initialized with ${files.size} files")
-        } catch (e: Exception) {
-            logger.warn("Failed to initialize file index", e)
+    /**
+     * Get the base directory for relative path resolution.
+     * Uses the directory of the current file, or project root if no file is open.
+     */
+    private fun getBaseDirectory(editor: Editor?): VirtualFile? {
+        // Try to get the directory of the current file
+        val currentFile = editor?.document?.let { doc ->
+            com.intellij.psi.PsiDocumentManager.getInstance(project).getPsiFile(doc)?.virtualFile
         }
-    }
 
-    private fun doInitializeFileIndex(fileTypeManager: FileTypeManager): List<FileEntry> {
-        return try {
-            FilenameIndex.getAllFiles(project)
-                .filter { file ->
-                    // Filter out ignored files and binary files
-                    !fileTypeManager.isFileIgnored(file.name) &&
-                    !isBinaryFile(file)
-                }
-                .map { file ->
-                    FileEntry(
-                        name = file.name,
-                        path = getRelativePath(file) ?: file.path,
-                        fileType = file.extension?.lowercase(),
-                        isDirectory = file.isDirectory,
-                        sortKey = buildSortKey(file),
-                    )
-                }
-                .sortedBy { it.sortKey }
-        } catch (e: Exception) {
-            logger.warn("Failed to build file index", e)
-            emptyList()
+        return when {
+            currentFile != null && !currentFile.isDirectory -> currentFile.parent
+            currentFile != null && currentFile.isDirectory -> currentFile
+            else -> project.basePath?.let { path ->
+                com.intellij.openapi.vfs.LocalFileSystem.getInstance().findFileByPath(path)
+            }
         }
     }
 
     /**
-     * Suggest file completions matching the query.
-     * @param query The search query (file name or partial path)
-     * @param limit Maximum number of results to return
-     * @return List of matching file completions
+     * Resolve a relative path query to a target directory and search pattern.
+     * @param query The query string (e.g., "../src/Main", "subdir/file", "test")
+     * @param baseDir The starting directory
+     * @return Pair of (target directory, search pattern)
      */
-    fun suggest(query: String, limit: Int): List<Completion> {
-        if (query.isBlank()) {
+    private fun resolvePath(query: String, baseDir: VirtualFile?): Pair<VirtualFile?, String> {
+        if (baseDir == null) return null to query
+
+        var currentDir = baseDir
+        var remaining = query
+
+        // Handle leading ./ or just start from current directory
+        if (remaining.startsWith("./")) {
+            remaining = remaining.substring(2)
+        }
+
+        // Handle absolute path from project root
+        if (remaining.startsWith("/")) {
+            val projectRoot = project.basePath?.let { path ->
+                com.intellij.openapi.vfs.LocalFileSystem.getInstance().findFileByPath(path)
+            }
+            if (projectRoot != null) {
+                currentDir = projectRoot
+                remaining = remaining.substring(1)
+            }
+        }
+
+        // Process path segments
+        val segments = remaining.split("/")
+        if (segments.isEmpty()) return currentDir to ""
+
+        // All but the last segment are directory navigation
+        for (i in 0 until segments.size - 1) {
+            val segment = segments[i]
+            currentDir = when (segment) {
+                ".." -> currentDir?.parent ?: return null to query
+                "." -> currentDir
+                "" -> currentDir
+                else -> currentDir?.findChild(segment) ?: return null to query
+            }
+            if (currentDir == null) return null to query
+        }
+
+        val searchPattern = segments.last()
+        return currentDir to searchPattern
+    }
+
+    /**
+     * Suggest completions from a specific directory.
+     */
+    private fun suggestFromDirectory(query: String, baseDir: VirtualFile?, limit: Int): List<Completion> {
+        val (targetDir, searchPattern) = resolvePath(query, baseDir)
+
+        if (targetDir == null) return emptyList()
+
+        val children = try {
+            targetDir.children?.toList() ?: emptyList()
+        } catch (e: Exception) {
+            logger.warn("Failed to list directory: ${targetDir.path}", e)
             return emptyList()
         }
 
-        // Ensure index is initialized
-        if (!initialized) {
-            initializeFileIndex()
-        }
-
-        val queryLower = query.lowercase()
-        val queryParts = queryLower.split('/')
-
-        val matches = buildList {
-            for (entry in allFiles) {
-                val score = calculateMatchScore(queryLower, queryParts, entry)
+        // Filter and score children
+        val matches = children
+            .filter { file ->
+                !fileTypeManager.isFileIgnored(file.name) && !isBinaryFile(file)
+            }
+            .mapNotNull { file ->
+                val score = calculateMatchScore(searchPattern, file.name)
                 if (score > 0) {
-                    add(score to entry)
+                    score to file
+                } else if (searchPattern.isEmpty()) {
+                    // Show all files when pattern is empty
+                    100 to file
+                } else {
+                    null
                 }
             }
-        }
+            .sortedWith(
+                compareByDescending<Pair<Int, VirtualFile>> { it.first }
+                    .thenBy { if (it.second.isDirectory) 0 else 1 }
+                    .thenBy { it.second.name.lowercase() }
+            )
+
+        // Build path prefix for display
+        val pathPrefix = buildPathPrefix(query)
+        val relativeBase = buildRelativeBase(baseDir, targetDir)
 
         return matches
-            .sortedWith(
-                compareByDescending<Pair<Int, FileEntry>> { it.first }
-                    .thenBy { it.second.sortKey.length }
-                    .thenBy { it.second.sortKey },
-            )
-            .asSequence()
-            .map { (_, entry) ->
+            .take(limit)
+            .map { (_, file) ->
+                val displayPath = if (pathPrefix.isNotEmpty()) {
+                    "$pathPrefix${file.name}"
+                } else {
+                    file.name
+                }
                 Completion(
-                    name = entry.name,
-                    path = entry.path,
-                    fileType = entry.fileType,
-                    isDirectory = entry.isDirectory,
-                    matchText = entry.name,
+                    name = file.name,
+                    path = relativeBase + file.name,
+                    displayPath = displayPath,
+                    fileType = file.extension?.lowercase(),
+                    isDirectory = file.isDirectory,
+                    matchText = file.name,
                 )
             }
-            .take(limit)
-            .toList()
     }
 
-    private fun calculateMatchScore(query: String, queryParts: List<String>, entry: FileEntry): Int {
-        val nameLower = entry.name.lowercase()
-        val pathLower = entry.path.lowercase()
-
-        // Exact name match gets highest score
-        if (nameLower == query) return 1000
-
-        // Name starts with query
-        if (nameLower.startsWith(query)) return 800
-
-        // Name contains query as word boundary
-        if (nameLower.contains("$query")) return 700
-
-        // Name fuzzy match
-        val nameScore = FuzzyMatcher.score(query, nameLower)
-        if (nameScore != null) return 600 + nameScore
-
-        // Path ends with query
-        if (pathLower.endsWith(query)) return 500
-
-        // Path contains all query parts in order
-        var pathIndex = 0
-        var allPartsFound = true
-        for (part in queryParts) {
-            if (part.isEmpty()) continue
-            val found = pathLower.indexOf(part, pathIndex)
-            if (found == -1) {
-                allPartsFound = false
-                break
-            }
-            pathIndex = found + part.length
+    /**
+     * Build the path prefix for display (e.g., "../", "src/")
+     */
+    private fun buildPathPrefix(query: String): String {
+        val lastSlash = query.lastIndexOf('/')
+        return if (lastSlash >= 0) {
+            query.substring(0, lastSlash + 1)
+        } else {
+            ""
         }
-        if (allPartsFound) return 400
+    }
 
-        // Path fuzzy match (lower priority)
-        val pathScore = FuzzyMatcher.score(query, pathLower)
-        if (pathScore != null) return 200 + pathScore
+    /**
+     * Build relative base path from original base to target directory.
+     */
+    private fun buildRelativeBase(baseDir: VirtualFile?, targetDir: VirtualFile?): String {
+        if (baseDir == null || targetDir == null) return ""
+        if (baseDir == targetDir) return ""
+
+        // Count how many levels we went up
+        val basePath = baseDir.path
+        val targetPath = targetDir.path
+
+        return if (targetPath.length < basePath.length && basePath.startsWith(targetPath)) {
+            // We went up - construct ../ path
+            val diff = basePath.substring(targetPath.length)
+            val levels = diff.count { it == '/' }
+            "../".repeat(levels)
+        } else if (targetPath.length > basePath.length && targetPath.startsWith(basePath)) {
+            // We went down - construct subpath
+            targetPath.substring(basePath.length + 1) + "/"
+        } else {
+            // Different branch - return full relative path
+            targetPath + "/"
+        }
+    }
+
+    private fun calculateMatchScore(pattern: String, name: String): Int {
+        if (pattern.isEmpty()) return 100
+
+        val nameLower = name.lowercase()
+        val patternLower = pattern.lowercase()
+
+        // Exact match
+        if (nameLower == patternLower) return 1000
+
+        // Starts with pattern
+        if (nameLower.startsWith(patternLower)) return 800
+
+        // Contains pattern as word boundary
+        if (nameLower.contains(patternLower)) return 600
+
+        // Fuzzy match
+        val fuzzyScore = FuzzyMatcher.score(patternLower, nameLower)
+        if (fuzzyScore != null) return 400 + fuzzyScore
 
         return 0
     }
 
-    private fun getRelativePath(file: VirtualFile): String? {
-        val basePath = project.basePath ?: return null
-        val filePath = file.path
-        return if (filePath.startsWith(basePath)) {
-            filePath.substring(basePath.length).removePrefix("/")
-        } else {
-            filePath
-        }
-    }
-
-    private fun buildSortKey(file: VirtualFile): String {
-        // Prioritize files in src directory, then by name
-        val path = file.path
-        val priority = when {
-            "/src/" in path -> "0"
-            "/test/" in path -> "1"
-            file.isDirectory -> "2"
-            else -> "3"
-        }
-        return "$priority${file.name.lowercase()}"
-    }
-
     private fun isBinaryFile(file: VirtualFile): Boolean {
+        if (file.isDirectory) return false
+
         val binaryExtensions = setOf(
             "exe", "dll", "so", "dylib", "bin", "o", "obj",
             "class", "jar", "war", "ear",
             "zip", "tar", "gz", "bz2", "7z", "rar",
-            "jpg", "jpeg", "png", "gif", "bmp", "ico", "svg",
+            "jpg", "jpeg", "png", "gif", "bmp", "ico",
             "mp3", "mp4", "avi", "mov", "wmv", "flv",
             "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx",
-            "db", "sqlite", "lock", "log",
+            "db", "sqlite", "lock",
         )
         return file.extension?.lowercase() in binaryExtensions
-    }
-
-    /**
-     * Refresh the file index. Call this when files change significantly.
-     */
-    fun refresh() {
-        initialized = false
-        initializeFileIndex()
     }
 }
 
@@ -298,12 +317,8 @@ object FilePathQueryParser {
             index++
         }
 
-        if (index >= content.length) {
-            return null
-        }
-
         val prefix = content.substring(0, index)
-        val query = content.substring(index)
+        val query = if (index < content.length) content.substring(index) else ""
 
         return FilePathQuery(prefix, query)
     }
