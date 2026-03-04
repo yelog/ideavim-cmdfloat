@@ -1745,7 +1745,11 @@ class CmdlineOverlayPanel(
                 }
 
                 is CompletionEntry.FilePath -> {
-                    setTextProgrammatically(textField, completion.prefix + completion.data.displayPath)
+                    // Use path (actual executable path) instead of displayPath
+                    val filePath = completion.data.path
+                    // Ensure space between command prefix and file path
+                    val separator = if (completion.prefix.endsWith(" ")) "" else " "
+                    setTextProgrammatically(textField, completion.prefix + separator + filePath)
                 }
             }
         }
