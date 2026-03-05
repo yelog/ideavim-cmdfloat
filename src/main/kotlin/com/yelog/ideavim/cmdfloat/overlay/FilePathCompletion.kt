@@ -145,11 +145,11 @@ class FilePathCompletion(private val project: Project) {
                     .thenBy { it.second.name.lowercase() }
             )
 
-        // Build path prefix for display and execution (e.g., "../", "src/")
+        // Build path prefix for display (e.g., "../", "src/")
         val pathPrefix = buildPathPrefix(query)
-        // Use pathPrefix directly as the executable path since it correctly represents
-        // the user's navigation intent (handles ../, subdirectories, etc.)
-        val executablePathPrefix = pathPrefix
+
+        // Get project base path for constructing project-relative paths
+        val projectBasePath = project.basePath
 
         return matches
             .take(limit)
@@ -159,10 +159,17 @@ class FilePathCompletion(private val project: Project) {
                 } else {
                     file.name
                 }
+                // Use project-relative path for execution to ensure IdeaVim can resolve it correctly
+                // IdeaVim resolves paths from the project root, not from the current file's directory
+                val projectRelativePath = if (projectBasePath != null && file.path.startsWith(projectBasePath)) {
+                    file.path.substring(projectBasePath.length + 1)
+                } else {
+                    file.path
+                }
                 val icon = getFileIcon(file)
                 Completion(
                     name = file.name,
-                    path = executablePathPrefix + file.name,
+                    path = projectRelativePath,
                     displayPath = displayPath,
                     fileType = file.extension?.lowercase(),
                     isDirectory = file.isDirectory,
