@@ -111,6 +111,14 @@ User Input → CmdlineOverlayKeyDispatcher → CmdlineOverlayManager → IdeaVim
 - Default bindings: previous = Up/Ctrl-P/Shift-Tab, next = Down/Ctrl-N/Tab
 - Contains `KeyStrokeParser` which parses Vim-style key notation (e.g., `<C-p>`, `<S-Tab>`, `ctrl+n`) into `javax.swing.KeyStroke` objects
 
+**Cache Layer** (`cache/`)
+- `DocumentWordCache` - caches extracted words from documents for search completion
+- `CompletionIndex` - maintains indexed completions to avoid re-computation on each keystroke
+
+**Debouncer** (`util/Debouncer.kt`)
+- Delays execution of operations (like completion filtering) until input stabilizes
+- Used to reduce unnecessary computation during rapid typing
+
 ### IdeaVim API Integration Strategy
 
 The plugin must work across multiple IdeaVim versions (2.10.0+) where internal APIs change frequently. **Always use reflection with fallbacks**:
@@ -161,6 +169,32 @@ Read these via `IdeaVimFacade.readGlobalVariable*()` methods.
 3. **Actions** (`actions/CmdfloatOverlayActions.kt`):
    - Three actions: `cmdfloat.command`, `cmdfloat.search`, `cmdfloat.search_backward`
    - Allow users to bind custom keymaps in `.ideavimrc` (e.g., `nmap ; <Action>(cmdfloat.command)`)
+
+## Testing
+
+**Test Framework**: JUnit4 + IntelliJ Platform TestFramework (`BasePlatformTestCase`)
+
+```kotlin
+@TestDataPath("\$CONTENT_ROOT/src/test/testData")
+class MyPluginTest : BasePlatformTestCase() {
+    fun testProjectService() {
+        val projectService = project.service<CmdlineOverlayService>()
+        assertNotNull(projectService)
+    }
+
+    override fun getTestDataPath() = "src/test/testData/rename"
+}
+```
+
+Test data files go in `src/test/testData/`.
+
+## Code Style
+
+For code style guidelines, see `AGENTS.md` which contains:
+- Formatting rules (4 spaces, ~120 char line length)
+- Kotlin idioms and naming conventions
+- Type safety guidelines
+- Commit message format (conventional commits)
 
 ## Important Implementation Details
 
