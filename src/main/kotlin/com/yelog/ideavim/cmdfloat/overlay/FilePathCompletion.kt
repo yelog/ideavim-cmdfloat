@@ -333,6 +333,12 @@ object FilePathQueryParser {
             return null
         }
 
+        // Only trigger file path completion if there's a space after the command
+        // This ensures :e still shows command completions (like :s), while ":e " triggers file completion
+        if (index >= content.length || !content[index].isWhitespace()) {
+            return null
+        }
+
         // Skip whitespace after command
         while (index < content.length && content[index].isWhitespace()) {
             index++
