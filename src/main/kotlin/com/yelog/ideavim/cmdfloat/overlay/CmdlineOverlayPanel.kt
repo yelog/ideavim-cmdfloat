@@ -1745,8 +1745,8 @@ class CmdlineOverlayPanel(
                 }
 
                 is CompletionEntry.FilePath -> {
-                    // Use path (actual executable path) instead of displayPath
-                    val filePath = completion.data.path
+                    // Use displayPath to preserve user's input format (e.g., "../", "./")
+                    val filePath = completion.data.displayPath
                     // Ensure space between command prefix and file path
                     val separator = if (completion.prefix.endsWith(" ")) "" else " "
                     setTextProgrammatically(textField, completion.prefix + separator + filePath)
