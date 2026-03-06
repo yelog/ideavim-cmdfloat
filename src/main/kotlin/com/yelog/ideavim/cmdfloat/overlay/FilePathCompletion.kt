@@ -159,14 +159,17 @@ class FilePathCompletion(private val project: Project) {
                 } else {
                     file.name
                 }
-                // Determine the best path format for execution:
-                // 1. If user typed relative path (../ or ./), preserve that format
-                // 2. Otherwise, use project-relative path from project root
-                val executionPath = buildExecutionPath(query, file, pathPrefix, projectBasePath)
+                // Use project-relative path for execution to ensure IdeaVim can resolve it correctly
+                // IdeaVim resolves paths from the project root, not from the current file's directory
+                val projectRelativePath = if (projectBasePath != null && file.path.startsWith(projectBasePath)) {
+                    file.path.substring(projectBasePath.length + 1)
+                } else {
+                    file.path
+                }
                 val icon = getFileIcon(file)
                 Completion(
                     name = file.name,
-                    path = executionPath,
+                    path = projectRelativePath,
                     displayPath = displayPath,
                     fileType = file.extension?.lowercase(),
                     isDirectory = file.isDirectory,
@@ -174,30 +177,6 @@ class FilePathCompletion(private val project: Project) {
                     icon = icon,
                 )
             }
-    }
-
-    /**
-     * Build the execution path for a file completion.
-     * Preserves user's relative path input when possible, falls back to project-relative path.
-     */
-    private fun buildExecutionPath(
-        query: String,
-        file: VirtualFile,
-        pathPrefix: String,
-        projectBasePath: String?
-    ): String {
-        // If user typed a relative path (../ or ./), preserve that format
-        if (pathPrefix.startsWith("../") || pathPrefix.startsWith("./")) {
-            return "$pathPrefix${file.name}"
-        }
-
-        // Use project-relative path for execution to ensure IdeaVim can resolve it correctly
-        // IdeaVim resolves paths from the project root, not from the current file's directory
-        return if (projectBasePath != null && file.path.startsWith(projectBasePath)) {
-            file.path.substring(projectBasePath.length + 1)
-        } else {
-            file.path
-        }
     }
 
     /**
