@@ -4,8 +4,32 @@
 
 ## 0.1.0
 
+### Features
+- feat: Add file path completion for commands like `:e`, `:vs`, `:sp`, `:tabe`, `:r`, `:w`
+- feat: Support relative path navigation with `..` in file completion
+- feat: Show file type icons in completion list matching project view
+- feat: Add history search filter with `!` prefix in command/search mode
+- feat: Support disabling default shortcut key interception via `let g:cmdfloat_disable_default_trigger = 1`
+- feat: Support Vim registers like `c-r0` in the floating window
+
+### Performance
 - perf: Add comprehensive performance optimizations
 - perf: Add TTL-based cache for IdeaVim global variable reads
+
+### Fixes
+- fix(file-path-completion): Require space after command to trigger file completion (e.g. `:e ` triggers file completion, `:e` shows command completions)
+- fix(file-path-completion): Preserve user relative path input format in display
+- fix(file-path-completion): Use project-relative paths for correct file resolution
+- fix(file-completion): Dispatch keys to focused component instead of editor
+- fix(file-completion): Strip leading mode prefix from payload to avoid double colon
+- fix(file-completion): Add space between command and file path on selection
+- fix(file-completion): Use path prefix for executable path instead of relativeBase
+- fix: Overlay blocked after using `:actionlist` — KEY_RELEASED events from overlay panel and replay path no longer pollute extended-search-mode state (#18)
+- fix: Avoid triggering the overlay during multi-character searches (e.g. flash search)
+
+### Documentation
+
+- docs: Add cache layer, testing and code style sections to AGENTS.md
 
 ## 0.0.10
 
