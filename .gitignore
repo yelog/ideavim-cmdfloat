@@ -7,3 +7,4 @@
 .qodana
 build
 .aider*
+.codegraph
