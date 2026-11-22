@@ -17,23 +17,40 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      RELEASE_TAG: ${{ github.ref_name }}
     steps:
+
+      - name: Fetch Sources
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Validate release metadata
+        run: |
+          release_version="${RELEASE_TAG#v}"
+          project_version=$(sed -nE 's/^[[:space:]]*pluginVersion[[:space:]]*=[[:space:]]*([^[:space:]]+)[[:space:]]*$/\1/p' gradle.properties)
+          if [[ "$release_version" != "$project_version" ]]; then
+            printf '::error::Tag %s does not match pluginVersion %s.\n' "$RELEASE_TAG" "$project_version"
+            exit 1
+          fi
+
+          if ! awk -v heading="## $release_version" '
+            found && /^## / { exit }
+            $0 == heading { found = 1; next }
+            found && /[^[:space:]]/ { has_notes = 1 }
+            found { print }
+            END { if (!has_notes) exit 1 }
+          ' CHANGELOG.md > "$RUNNER_TEMP/cmdfloat-release-notes.md"; then
+            printf '::error::Missing release notes for %s in CHANGELOG.md.\n' "$release_version"
+            exit 1
+          fi
 
       - name: Maximize Build Space
         uses: jlumbroso/free-disk-space@v2.0.0
         with:
           tool-cache: false
           large-packages: false
-
-      - name: Fetch Sources
-        uses: actions/checkout@v7
-
-      - name: Get version from tag
-        id: version
-        run: |
-          TAG="${{ github.ref_name }}"
-          VERSION="${TAG#v}"
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Setup Java
         uses: actions/setup-java@v6
@@ -47,23 +64,24 @@ jobs:
       - name: Build plugin
         run: ./gradlew buildPlugin
 
-      - name: Extract changelog for version
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          mkdir -p build/tmp
-          awk -v ver="## $VERSION" '
-            $0 == ver { found=1; next }
-            found && /^## /  { exit }
-            found            { print }
-          ' CHANGELOG.md | sed '/^[[:space:]]*$/d' > build/tmp/release_notes.md
-          echo "--- release notes ---"
-          cat build/tmp/release_notes.md
-
       - name: Create GitHub Release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${{ github.ref_name }}" \
-            --title "${{ github.ref_name }}" \
-            --notes-file build/tmp/release_notes.md \
+          gh release create "$RELEASE_TAG" \
+            --verify-tag \
+            --title "$RELEASE_TAG" \
+            --notes-file "$RUNNER_TEMP/cmdfloat-release-notes.md" \
             ./build/distributions/*.zip
+
+  marketplace:
+    name: Publish to JetBrains Marketplace
+    needs: release
+    permissions:
+      contents: read
+    uses: ./.github/workflows/release.yml
+    secrets:
+      PUBLISH_TOKEN: ${{ secrets.PUBLISH_TOKEN }}
+      CERTIFICATE_CHAIN: ${{ secrets.CERTIFICATE_CHAIN }}
+      PRIVATE_KEY: ${{ secrets.PRIVATE_KEY }}
+      PRIVATE_KEY_PASSWORD: ${{ secrets.PRIVATE_KEY_PASSWORD }}
