@@ -8,8 +8,26 @@ updates:
     directory: "/"
     schedule:
       interval: "daily"
+    groups:
+      gradle-test-patches:
+        patterns: ["junit:junit", "org.opentest4j:opentest4j"]
+        update-types: ["patch"]
+      gradle-patches:
+        patterns: ["*"]
+        update-types: ["patch"]
+      gradle-minor:
+        patterns: ["*"]
+        update-types: ["minor"]
   # Maintain dependencies for GitHub Actions
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "daily"
+    groups:
+      actions-patches:
+        patterns: ["*"]
+        exclude-patterns: ["dependabot/fetch-metadata"]
+        update-types: ["patch"]
+      actions-minor:
+        patterns: ["*"]
+        update-types: ["minor"]
