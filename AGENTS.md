@@ -193,7 +193,10 @@ Example: `feat: add support for Vim registers in floating window`
 
 ## Dependency Versions (libs.versions.toml)
 
-- Kotlin: 2.2.0
-- IntelliJ Platform Gradle Plugin: 2.10.2
+- Kotlin: 2.4.21
+- IntelliJ Platform Gradle Plugin: 2.20.1
 - Target Platform: IC 2024.3.6
 - JVM Toolchain: 21
+
+Gradle is pinned in `gradle/wrapper/gradle-wrapper.properties`. To upgrade it,
+run `./gradlew wrapper --gradle-version <version>`, then `./gradlew wrapper` again.
