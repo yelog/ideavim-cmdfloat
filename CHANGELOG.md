@@ -2,6 +2,17 @@
 
 # IdeaVim-CmdFloat Changelog
 
+## [Unreleased]
+
+## 0.1.1
+
+### Maintenance
+
+- Update the Gradle Wrapper to 9.9.1 and the IntelliJ Platform Gradle Plugin to 2.20.1.
+- Update the Qodana and Changelog Gradle plugins.
+- Group Dependabot updates and require CI checks before merging eligible patches.
+- Remove unused imports and redundant Kotlin casts and non-null assertions.
+
 ## 0.1.0
 
 ### Features
@@ -87,7 +98,3 @@
 - Search supports showing all current words
 - Search supports displaying the total number of matches and the current index
 - The completion box supports shortcut keys by default: up/down arrows, Tab/Shift+Tab, ctrl+n/ctrl+p
-
-## [Unreleased]
-### Added
-- Initial scaffold created from [IntelliJ Platform Plugin Template](https://github.com/JetBrains/intellij-platform-plugin-template)
