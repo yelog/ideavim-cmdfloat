@@ -22,7 +22,6 @@ import java.util.Locale
 import java.util.Optional
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import javax.swing.KeyStroke
 
@@ -723,7 +722,7 @@ object IdeaVimFacade {
             return emptyList()
         }
         return when (raw) {
-            is Collection<*> -> raw as Collection<Any?>
+            is Collection<*> -> raw
             is Array<*> -> raw.toList()
             else -> {
                 logger.warn("Unexpected getAllOptions result type: ${raw?.javaClass?.name}")

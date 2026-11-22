@@ -238,7 +238,7 @@ class CmdlineOverlayManager(private val project: Project) {
         activeEditor = null
         panel?.notifyClosed()
         if (shouldCancelExpression) {
-            IdeaVimFacade.cancelExpressionInput(editor!!)
+            IdeaVimFacade.cancelExpressionInput(editor)
             expressionReplayNeedsCtrlR = true
         }
         if (requestCancel) {
@@ -421,9 +421,7 @@ private fun isMeaningfulAttributes(attributes: TextAttributes, defaultAttributes
     return false
 }
 
-private fun copyTextAttributes(source: TextAttributes): TextAttributes {
-    return (source.clone() as TextAttributes)
-}
+private fun copyTextAttributes(source: TextAttributes): TextAttributes = source.clone()
 
 private fun colorsEqual(first: Color?, second: Color?): Boolean {
     if (first === second) {
